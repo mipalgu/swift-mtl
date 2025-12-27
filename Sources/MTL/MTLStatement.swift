@@ -5,7 +5,6 @@
 //  Created by Rene Hexel on 27/12/2025.
 //  Copyright (c) 2025 Rene Hexel. All rights reserved.
 //
-
 import ECore
 import EMFBase
 import Foundation
@@ -575,8 +574,47 @@ public struct MTLProtectedArea: MTLStatement {
 
     @MainActor
     public func execute(in context: MTLExecutionContext) async throws {
-        // TODO: Implement protected area logic
-        try await body.execute(in: context)
+        // Evaluate protected area ID
+        let idResult = try await id.evaluate(in: context)
+        guard let idString = idResult as? String else {
+            throw MTLExecutionError.typeError("Protected area ID must evaluate to a string")
+        }
+
+        // Evaluate tag prefixes if present
+        let startPrefix: String
+        if let startTagPrefixExpr = startTagPrefix {
+            let startPrefixResult = try await startTagPrefixExpr.evaluate(in: context)
+            startPrefix = (startPrefixResult as? String) ?? ""
+        } else {
+            startPrefix = ""
+        }
+
+        let endPrefix: String
+        if let endTagPrefixExpr = endTagPrefix {
+            let endPrefixResult = try await endTagPrefixExpr.evaluate(in: context)
+            endPrefix = (endPrefixResult as? String) ?? ""
+        } else {
+            endPrefix = ""
+        }
+
+        // Generate protection markers
+        let startMarker = "\(startPrefix)START PROTECTED REGION \(idString)"
+        let endMarker = "\(endPrefix)END PROTECTED REGION \(idString)"
+
+        // Write start marker
+        context.writeLine(startMarker)
+
+        // Check for preserved content
+        if let preservedContent = context.getProtectedAreaContent(idString) {
+            // Write preserved content
+            context.write(preservedContent, indent: false)
+        } else {
+            // Execute body for default content
+            try await body.execute(in: context)
+        }
+
+        // Write end marker
+        context.writeLine(endMarker)
     }
 }
 
@@ -600,7 +638,17 @@ public struct MTLTrace: MTLStatement {
 
     @MainActor
     public func execute(in context: MTLExecutionContext) async throws {
-        // TODO: Record trace link
+        // Evaluate source expression to get model element
+        let sourceResult = try await sourceExpression.evaluate(in: context)
+
+        // Record trace link if source is an EObject
+        if let sourceObject = sourceResult as? any EObject {
+            // TODO: Track current file/position for accurate target location
+            // For now, record with a placeholder target
+            context.addTraceLink(source: sourceObject, target: "generated-output")
+        }
+
+        // Execute body
         try await body.execute(in: context)
     }
 }
@@ -634,7 +682,41 @@ public struct MTLMacroInvocation: MTLStatement {
 
     @MainActor
     public func execute(in context: MTLExecutionContext) async throws {
-        // TODO: Look up and execute macro
-        throw MTLExecutionError.macroNotFound(macroName)
+        // Look up macro in module
+        guard let macro = context.module.macros[macroName] else {
+            throw MTLExecutionError.macroNotFound(
+                "Macro '\(macroName)' not found in module '\(context.module.name)'")
+        }
+
+        // Check parameter count
+        guard arguments.count == macro.parameters.count else {
+            throw MTLExecutionError.invalidOperation(
+                "Macro '\(macroName)' expects \(macro.parameters.count) arguments, got \(arguments.count)"
+            )
+        }
+
+        // Check body parameter requirement
+        if macro.bodyParameter != nil && bodyContent == nil {
+            throw MTLExecutionError.invalidOperation(
+                "Macro '\(macroName)' expects body content but none provided"
+            )
+        }
+
+        // Push new scope for macro expansion
+        context.pushScope()
+        defer { context.popScope() }
+
+        // Evaluate and bind arguments
+        for (parameter, argumentExpr) in zip(macro.parameters, arguments) {
+            let argumentValue = try await argumentExpr.evaluate(in: context)
+            context.setVariable(parameter.name, value: argumentValue)
+        }
+
+        // Bind body parameter if present
+        // TODO: This requires a way to represent blocks as callable values
+        // For now, macros with body parameters will have limited functionality
+
+        // Execute macro body
+        try await macro.body.execute(in: context)
     }
 }
