@@ -484,13 +484,38 @@ public final class MTLExecutionContext: Sendable {
             try await closeFile()
         }
 
-        // Finalize the main writer if needed
+        // Save the main writer's content to stdout
         if let mainWriter = writerStack.first {
-            // For file system strategy, we might want to write stdout
-            // For in-memory strategy, content is already captured
-            // This depends on the strategy implementation
-            _ = await mainWriter.getContent()
+            // For in-memory strategy, create and finalize a writer for stdout
+            let stdoutWriter = try await generationStrategy.createWriter(
+                url: "stdout",
+                mode: .overwrite,
+                charset: "UTF-8",
+                indentation: MTLIndentation() // Start with zero indentation
+            )
+
+            // Copy content from main writer to stdout writer
+            let content = await mainWriter.getContent()
+            await stdoutWriter.write(content, indent: false)
+
+            // Finalize stdout writer to save content
+            try await generationStrategy.finalizeWriter(stdoutWriter)
         }
+    }
+
+    // MARK: - Testing Support
+
+    /// Returns the currently generated text from the main writer.
+    ///
+    /// This method is primarily intended for testing purposes to verify
+    /// generated output without finalizing the generation.
+    ///
+    /// - Returns: The accumulated text in the current writer
+    public func getGeneratedText() async -> String {
+        guard let currentWriter = writerStack.last else {
+            return ""
+        }
+        return await currentWriter.getContent()
     }
 
     // MARK: - Debugging
