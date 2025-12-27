@@ -130,7 +130,8 @@ public actor MTLWriter {
         guard !text.isEmpty else { return }
 
         // Apply indentation if at line start and indentation is enabled
-        if atLineStart && indent {
+        // BUT: don't indent the very first write in an empty buffer (start at column 0)
+        if atLineStart && indent && !buffer.isEmpty {
             buffer.append(indentation.asString)
         }
 

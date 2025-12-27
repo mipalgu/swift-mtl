@@ -94,9 +94,9 @@ public struct MTLTextStatement: MTLStatement {
 
     @MainActor
     public func execute(in context: MTLExecutionContext) async throws {
-        context.write(value)
+        await context.write(value)
         if newLineNeeded {
-            context.writeLine()
+            await context.writeLine()
         }
     }
 }
@@ -142,10 +142,10 @@ public struct MTLExpressionStatement: MTLStatement {
     public func execute(in context: MTLExecutionContext) async throws {
         let result = try await expression.evaluate(in: context)
         if let result = result {
-            context.write("\(result)")
+            await context.write("\(result)")
         }
         if newLineNeeded {
-            context.writeLine()
+            await context.writeLine()
         }
     }
 }
@@ -181,9 +181,9 @@ public struct MTLNewLineStatement: MTLStatement {
 
     @MainActor
     public func execute(in context: MTLExecutionContext) async throws {
-        context.writeLine(indent: indentationNeeded)
+        await context.writeLine(indent: indentationNeeded)
         if newLineNeeded {
-            context.writeLine()
+            await context.writeLine()
         }
     }
 }
@@ -287,7 +287,10 @@ public struct MTLForStatement: MTLStatement {
 
         // Handle different collection types
         let items: [any EcoreValue]
-        if let array = collection as? [any EcoreValue] {
+        if let valueArray = collection as? EcoreValueArray {
+            // Unwrap EcoreValueArray to get the underlying values
+            items = valueArray.values
+        } else if let array = collection as? [any EcoreValue] {
             items = array
         } else if let singleItem = collection {
             items = [singleItem]
@@ -311,7 +314,7 @@ public struct MTLForStatement: MTLStatement {
             if index < items.count - 1, let sep = separator {
                 let sepValue = try await sep.evaluate(in: context)
                 if let sepValue = sepValue {
-                    context.write("\(sepValue)")
+                    await context.write("\(sepValue)")
                 }
             }
         }
@@ -602,19 +605,19 @@ public struct MTLProtectedArea: MTLStatement {
         let endMarker = "\(endPrefix)END PROTECTED REGION \(idString)"
 
         // Write start marker
-        context.writeLine(startMarker)
+        await context.writeLine(startMarker)
 
         // Check for preserved content
         if let preservedContent = await context.getProtectedAreaContent(idString) {
             // Write preserved content
-            context.write(preservedContent, indent: false)
+            await context.write(preservedContent, indent: false)
         } else {
             // Execute body for default content
             try await body.execute(in: context)
         }
 
         // Write end marker
-        context.writeLine(endMarker)
+        await context.writeLine(endMarker)
     }
 }
 
@@ -713,8 +716,23 @@ public struct MTLMacroInvocation: MTLStatement {
         }
 
         // Bind body parameter if present
-        // TODO: This requires a way to represent blocks as callable values
-        // For now, macros with body parameters will have limited functionality
+        if let bodyParam = macro.bodyParameter, let body = bodyContent {
+            // Create a temporary writer to capture body content
+            let tempWriter = MTLWriter(indentation: context.currentIndentation)
+
+            // Manually push temporary writer to capture output
+            await context.pushWriter(tempWriter)
+
+            // Execute the body content to generate text in the temp writer
+            try await body.execute(in: context)
+
+            // Pop the temporary writer
+            await context.popWriter()
+
+            // Get the captured text and bind it to the body parameter
+            let bodyText = await tempWriter.getContent()
+            context.setVariable(bodyParam, value: bodyText as String)
+        }
 
         // Execute macro body
         try await macro.body.execute(in: context)

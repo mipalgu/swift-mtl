@@ -83,7 +83,7 @@ struct MTLGeneratorTests {
                 MTLTextStatement(value: "Line 2"),
                 MTLNewLineStatement(indentationNeeded: true),
                 MTLTextStatement(value: "Line 3")
-            ], inlined: false),
+            ], inlined: true),
             isMain: true,
             overrides: nil,
             documentation: nil

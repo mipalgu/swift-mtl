@@ -307,6 +307,26 @@ public final class MTLExecutionContext: Sendable {
         return indentationStack.last ?? MTLIndentation()
     }
 
+    // MARK: - Writer Management (Internal)
+
+    /// Pushes a writer onto the stack (internal use).
+    ///
+    /// This is used internally for capturing output in temporary writers.
+    ///
+    /// - Parameter writer: The writer to push
+    func pushWriter(_ writer: MTLWriter) async {
+        writerStack.append(writer)
+    }
+
+    /// Pops the top writer from the stack (internal use).
+    ///
+    /// - Returns: The popped writer, or nil if only the main writer remains
+    @discardableResult
+    func popWriter() async -> MTLWriter? {
+        guard writerStack.count > 1 else { return nil }
+        return writerStack.removeLast()
+    }
+
     // MARK: - Text Generation
 
     /// Writes text to the current writer.
@@ -317,11 +337,9 @@ public final class MTLExecutionContext: Sendable {
     /// - Parameters:
     ///   - text: The text to write
     ///   - indent: Whether to apply indentation if at line start (default: true)
-    public func write(_ text: String, indent: Bool = true) {
+    public func write(_ text: String, indent: Bool = true) async {
         guard let currentWriter = writerStack.last else { return }
-        Task {
-            await currentWriter.write(text, indent: indent)
-        }
+        await currentWriter.write(text, indent: indent)
     }
 
     /// Writes a line of text followed by a newline to the current writer.
@@ -329,11 +347,9 @@ public final class MTLExecutionContext: Sendable {
     /// - Parameters:
     ///   - text: The text to write (default: empty string for blank line)
     ///   - indent: Whether to apply indentation (default: true)
-    public func writeLine(_ text: String = "", indent: Bool = true) {
+    public func writeLine(_ text: String = "", indent: Bool = true) async {
         guard let currentWriter = writerStack.last else { return }
-        Task {
-            await currentWriter.writeLine(text, indent: indent)
-        }
+        await currentWriter.writeLine(text, indent: indent)
     }
 
     // MARK: - File Management

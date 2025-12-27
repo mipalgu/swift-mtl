@@ -59,9 +59,9 @@ struct MTLProtectedAreaTests {
         let tempFile = "/tmp/mtl-test-\(UUID().uuidString).txt"
         let content = """
         Generated code
-        // PROTECTED REGION ID(area1) START
+        // START PROTECTED REGION area1
         User code preserved
-        // PROTECTED REGION ID(area1) END
+        // END PROTECTED REGION area1
         More generated code
         """
 
