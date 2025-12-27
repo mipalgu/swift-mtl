@@ -1,26 +1,48 @@
-// swift-tools-version: 6.2
-// The swift-tools-version declares the minimum version of Swift required to build this package.
-
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
-    name: "MTL",
+    name: "swift-mtl",
+    platforms: [
+        .macOS(.v15)
+    ],
     products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
             name: "MTL",
             targets: ["MTL"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-collections", from: "1.0.0"),
+        .package(url: "https://github.com/mipalgu/swift-ecore", branch: "main"),
+        .package(path: "../swift-aql"),
+    ],
     targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "MTL"
+            name: "MTL",
+            dependencies: [
+                .product(name: "ECore", package: "swift-ecore"),
+                .product(name: "EMFBase", package: "swift-ecore"),
+                .product(name: "OCL", package: "swift-ecore"),
+                .product(name: "OrderedCollections", package: "swift-collections"),
+                .product(name: "AQL", package: "swift-aql"),
+            ],
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency")
+            ]
         ),
         .testTarget(
             name: "MTLTests",
-            dependencies: ["MTL"]
+            dependencies: [
+                "MTL",
+                .product(name: "ECore", package: "swift-ecore"),
+            ],
+            resources: [
+                .copy("Resources")
+            ],
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency")
+            ]
         ),
     ]
 )
