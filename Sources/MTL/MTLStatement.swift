@@ -605,7 +605,7 @@ public struct MTLProtectedArea: MTLStatement {
         context.writeLine(startMarker)
 
         // Check for preserved content
-        if let preservedContent = context.getProtectedAreaContent(idString) {
+        if let preservedContent = await context.getProtectedAreaContent(idString) {
             // Write preserved content
             context.write(preservedContent, indent: false)
         } else {

@@ -128,12 +128,11 @@ public final class MTLExecutionContext: Sendable {
 
     // MARK: Protected Areas
 
-    /// Storage for protected area content, keyed by ID.
+    /// Manager for protected area content preservation.
     ///
     /// Protected areas preserve user code sections across regeneration.
-    /// The ID identifies the protected section, and the value is the
-    /// preserved content.
-    private var protectedAreas: [String: String] = [:]
+    /// The manager handles scanning existing files and preserving content.
+    private let protectedAreaManager: MTLProtectedAreaManager
 
     // MARK: Trace Support
 
@@ -170,10 +169,12 @@ public final class MTLExecutionContext: Sendable {
     public init(
         module: MTLModule,
         generationStrategy: any MTLGenerationStrategy,
-        aqlContext: AQLExecutionContext? = nil
+        aqlContext: AQLExecutionContext? = nil,
+        protectedAreaManager: MTLProtectedAreaManager? = nil
     ) {
         self.module = module
         self.generationStrategy = generationStrategy
+        self.protectedAreaManager = protectedAreaManager ?? MTLProtectedAreaManager()
 
         // Create AQL context with empty execution engine (models registered later)
         if let providedContext = aqlContext {
@@ -383,8 +384,8 @@ public final class MTLExecutionContext: Sendable {
     ///
     /// - Parameter id: The protected area identifier
     /// - Returns: The preserved content, or nil if no content exists
-    public func getProtectedAreaContent(_ id: String) -> String? {
-        return protectedAreas[id]
+    public func getProtectedAreaContent(_ id: String) async -> String? {
+        return await protectedAreaManager.getContent(id)
     }
 
     /// Sets the preserved content for a protected area.
@@ -395,8 +396,31 @@ public final class MTLExecutionContext: Sendable {
     /// - Parameters:
     ///   - id: The protected area identifier
     ///   - content: The content to preserve
-    public func setProtectedAreaContent(_ id: String, content: String) {
-        protectedAreas[id] = content
+    ///   - markers: Optional tuple of (startMarker, endMarker)
+    public func setProtectedAreaContent(
+        _ id: String,
+        content: String,
+        markers: (String, String)? = nil
+    ) async {
+        await protectedAreaManager.setContent(id, content: content, markers: markers)
+    }
+
+    /// Scans a file for protected areas before regeneration.
+    ///
+    /// This should be called before generating to a file that may already exist,
+    /// to preserve any protected areas in the existing file.
+    ///
+    /// - Parameter path: The file path to scan
+    /// - Throws: `MTLExecutionError.fileError` if scanning fails
+    public func scanFileForProtectedAreas(_ path: String) async throws {
+        try await protectedAreaManager.scanFile(path)
+    }
+
+    /// Returns the protected area manager for advanced operations.
+    ///
+    /// - Returns: The protected area manager
+    public var protectedAreas: MTLProtectedAreaManager {
+        return protectedAreaManager
     }
 
     // MARK: - Trace Support
@@ -474,13 +498,15 @@ public final class MTLExecutionContext: Sendable {
     /// Returns a summary of the current execution state for debugging.
     ///
     /// - Returns: A string describing the current state
-    public func debugSummary() -> String {
+    public func debugSummary() async -> String {
+        let protectedAreaCount = await protectedAreaManager.getAllContent().count
+
         var summary = "MTL Execution Context State:\n"
         summary += "  Variables: \(variables.count) in current scope\n"
         summary += "  Scope stack depth: \(scopeStack.count)\n"
         summary += "  Indentation level: \(currentIndentation.level)\n"
         summary += "  Writer stack depth: \(writerStack.count)\n"
-        summary += "  Protected areas: \(protectedAreas.count)\n"
+        summary += "  Protected areas: \(protectedAreaCount)\n"
         summary += "  Trace links: \(traceLinks.count)\n"
         summary += "  Registered models: \(models.count)\n"
         return summary
