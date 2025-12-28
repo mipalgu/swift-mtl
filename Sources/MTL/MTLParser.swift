@@ -891,6 +891,7 @@ private actor MTLSyntaxParser {
 
         switch token.type {
         case .keyword(let keyword):
+            advance()  // Consume the keyword
             switch keyword {
             case "if":
                 return try parseIfStatement()
@@ -927,26 +928,511 @@ private actor MTLSyntaxParser {
         }
     }
 
-    // MARK: - Placeholder Parse Methods
+    // MARK: - Expression Parsing
 
+    /// Parses an expression with operator precedence.
     private func parseExpression() throws -> MTLExpression {
-        // TODO: Implement in Phase 3
-        throw MTLParseError.malformedExpression("Expression parsing not yet implemented")
+        return try parseLogicalOrExpression()
     }
 
+    /// Parses logical OR expression (lowest precedence).
+    private func parseLogicalOrExpression() throws -> MTLExpression {
+        var left = try parseLogicalAndExpression()
+
+        while case .keyword("or") = current()?.type {
+            advance()
+            let right = try parseLogicalAndExpression()
+            left = MTLExpression(
+                AQLBinaryExpression(left: left.aqlExpression, op: .or, right: right.aqlExpression)
+            )
+        }
+
+        return left
+    }
+
+    /// Parses logical AND expression.
+    private func parseLogicalAndExpression() throws -> MTLExpression {
+        var left = try parseComparisonExpression()
+
+        while case .keyword("and") = current()?.type {
+            advance()
+            let right = try parseComparisonExpression()
+            left = MTLExpression(
+                AQLBinaryExpression(left: left.aqlExpression, op: .and, right: right.aqlExpression)
+            )
+        }
+
+        return left
+    }
+
+    /// Parses comparison expression.
+    private func parseComparisonExpression() throws -> MTLExpression {
+        var left = try parseAdditiveExpression()
+
+        while let op = parseComparisonOperator() {
+            let right = try parseAdditiveExpression()
+            left = MTLExpression(
+                AQLBinaryExpression(left: left.aqlExpression, op: op, right: right.aqlExpression)
+            )
+        }
+
+        return left
+    }
+
+    /// Parses comparison operator if present.
+    private func parseComparisonOperator() -> AQLBinaryExpression.Operator? {
+        switch current()?.type {
+        case .operator("="):
+            advance()
+            return .equals
+        case .operator("<>"):
+            advance()
+            return .notEquals
+        case .operator("<"):
+            advance()
+            return .lessThan
+        case .operator(">"):
+            advance()
+            return .greaterThan
+        case .operator("<="):
+            advance()
+            return .lessOrEqual
+        case .operator(">="):
+            advance()
+            return .greaterOrEqual
+        default:
+            return nil
+        }
+    }
+
+    /// Parses additive expression (+ and -).
+    private func parseAdditiveExpression() throws -> MTLExpression {
+        var left = try parseMultiplicativeExpression()
+
+        while true {
+            switch current()?.type {
+            case .operator("+"):
+                advance()
+                let right = try parseMultiplicativeExpression()
+                left = MTLExpression(
+                    AQLBinaryExpression(left: left.aqlExpression, op: .add, right: right.aqlExpression)
+                )
+            case .operator("-"):
+                advance()
+                let right = try parseMultiplicativeExpression()
+                left = MTLExpression(
+                    AQLBinaryExpression(left: left.aqlExpression, op: .subtract, right: right.aqlExpression)
+                )
+            default:
+                return left
+            }
+        }
+    }
+
+    /// Parses multiplicative expression (*, /).
+    private func parseMultiplicativeExpression() throws -> MTLExpression {
+        var left = try parseNavigationExpression()
+
+        while true {
+            switch current()?.type {
+            case .operator("*"):
+                advance()
+                let right = try parseNavigationExpression()
+                left = MTLExpression(
+                    AQLBinaryExpression(left: left.aqlExpression, op: .multiply, right: right.aqlExpression)
+                )
+            case .operator("/"):
+                advance()
+                let right = try parseNavigationExpression()
+                left = MTLExpression(
+                    AQLBinaryExpression(left: left.aqlExpression, op: .divide, right: right.aqlExpression)
+                )
+            default:
+                return left
+            }
+        }
+    }
+
+    /// Parses navigation expression (obj.prop, obj->operation()).
+    private func parseNavigationExpression() throws -> MTLExpression {
+        var expr = try parsePrimaryExpression()
+
+        while true {
+            switch current()?.type {
+            case .dot:
+                // Property navigation: obj.prop
+                advance()
+                guard case .identifier(let propName) = current()?.type else {
+                    throw error("Expected property name after '.'")
+                }
+                advance()
+                expr = MTLExpression(
+                    AQLNavigationExpression(source: expr.aqlExpression, property: propName)
+                )
+
+            case .operator("->"):
+                // Collection operation: obj->select(...)
+                advance()
+                expr = try parseCollectionOperation(source: expr)
+
+            default:
+                return expr
+            }
+        }
+    }
+
+    /// Parses collection operation like select, reject, collect, etc.
+    private func parseCollectionOperation(source: MTLExpression) throws -> MTLExpression {
+        // Parse operation name (allow keywords as operation names)
+        let opName: String
+        switch current()?.type {
+        case .identifier(let id):
+            opName = id
+        case .keyword(let kw):
+            opName = kw
+        default:
+            throw error("Expected collection operation name after '->'")
+        }
+        advance()
+
+        // Map operation name to AQLCollectionExpression.Operation
+        let operation: AQLCollectionExpression.Operation
+        switch opName {
+        case "select": operation = .select
+        case "reject": operation = .reject
+        case "collect": operation = .collect
+        case "any": operation = .any
+        case "exists": operation = .exists
+        case "forAll": operation = .forAll
+        case "size": operation = .size
+        case "isEmpty": operation = .isEmpty
+        case "notEmpty": operation = .notEmpty
+        case "first": operation = .first
+        case "last": operation = .last
+        default:
+            throw error("Unknown collection operation: \(opName)")
+        }
+
+        // Operations that don't need parameters
+        if operation == .size || operation == .isEmpty || operation == .notEmpty ||
+           operation == .first || operation == .last {
+            // These operations may have () or not
+            if current()?.type == .leftParen {
+                advance()
+                try expect(.rightParen)
+            }
+            return MTLExpression(
+                AQLCollectionExpression(source: source.aqlExpression, operation: operation)
+            )
+        }
+
+        // Operations that need iterator and body: select, reject, collect, any, forAll, exists
+        try expect(.leftParen)
+
+        // Parse iterator variable: x | body
+        guard case .identifier(let iterator) = current()?.type else {
+            throw error("Expected iterator variable in collection operation")
+        }
+        advance()
+
+        try expect(.pipe)
+
+        // Parse body expression
+        let body = try parseExpression()
+
+        try expect(.rightParen)
+
+        return MTLExpression(
+            AQLCollectionExpression(
+                source: source.aqlExpression,
+                operation: operation,
+                iterator: iterator,
+                body: body.aqlExpression
+            )
+        )
+    }
+
+    /// Parses primary expression (literals, variables, parentheses).
+    private func parsePrimaryExpression() throws -> MTLExpression {
+        switch current()?.type {
+        // String literal
+        case .stringLiteral(let value):
+            advance()
+            return MTLExpression(AQLLiteralExpression(value: value))
+
+        // Integer literal
+        case .integerLiteral(let value):
+            advance()
+            return MTLExpression(AQLLiteralExpression(value: value))
+
+        // Real literal
+        case .realLiteral(let value):
+            advance()
+            return MTLExpression(AQLLiteralExpression(value: value))
+
+        // Boolean literal
+        case .booleanLiteral(let value):
+            advance()
+            return MTLExpression(AQLLiteralExpression(value: value))
+
+        // Variable or keyword used as variable
+        case .identifier(let name):
+            advance()
+            return MTLExpression(AQLVariableExpression(name: name))
+
+        case .keyword(let keyword):
+            // Some keywords can be used as variable names in expressions
+            advance()
+            return MTLExpression(AQLVariableExpression(name: keyword))
+
+        // Parenthesized expression
+        case .leftParen:
+            advance()
+            let expr = try parseExpression()
+            try expect(.rightParen)
+            return expr
+
+        default:
+            throw error("Expected expression, got \(current()?.type ?? .eof)")
+        }
+    }
+
+    // MARK: - Control Flow Statements
+
+    /// Parses an if statement: [if (condition)]...[elseif (cond)]...[else]...[/if]
     private func parseIfStatement() throws -> MTLIfStatement {
-        // TODO: Implement in Phase 4
-        throw MTLParseError.invalidSyntax("If statement parsing not yet implemented")
+        // Already consumed 'if' keyword
+        debugPrint("Parsing if statement")
+
+        // Parse condition: (expr)
+        try expect(.leftParen)
+        let condition = try parseExpression()
+        try expect(.rightParen)
+        try expect(.rightBracket)
+
+        // Parse then block
+        let thenBlock = try parseBlock(until: ["elseif", "else", "/if"])
+
+        // Parse elseif blocks
+        var elseIfBlocks: [(MTLExpression, MTLBlock)] = []
+        while case .keyword("elseif") = current()?.type {
+            advance()  // Consume 'elseif'
+
+            // Parse elseif condition
+            try expect(.leftParen)
+            let elseIfCondition = try parseExpression()
+            try expect(.rightParen)
+            try expect(.rightBracket)
+
+            // Parse elseif block
+            let elseIfBlock = try parseBlock(until: ["elseif", "else", "/if"])
+            elseIfBlocks.append((elseIfCondition, elseIfBlock))
+        }
+
+        // Parse optional else block
+        var elseBlock: MTLBlock? = nil
+        if case .keyword("else") = current()?.type {
+            advance()  // Consume 'else'
+            try expect(.rightBracket)
+
+            elseBlock = try parseBlock(until: ["/if"])
+        }
+
+        // Expect closing [/if]
+        try expect(.slash)
+        try expectKeyword("if")
+        try expect(.rightBracket)
+
+        return MTLIfStatement(
+            condition: condition,
+            thenBlock: thenBlock,
+            elseIfBlocks: elseIfBlocks,
+            elseBlock: elseBlock
+        )
     }
 
+    /// Parses a for statement: [for (item in collection) separator(sep)][/for]
     private func parseForStatement() throws -> MTLForStatement {
-        // TODO: Implement in Phase 4
-        throw MTLParseError.invalidSyntax("For statement parsing not yet implemented")
+        // Already consumed 'for' keyword
+        debugPrint("Parsing for statement")
+
+        // Parse binding: (var : Type in collection)
+        try expect(.leftParen)
+
+        // Parse variable name
+        let varName: String
+        switch current()?.type {
+        case .identifier(let id):
+            varName = id
+        case .keyword(let kw):
+            varName = kw  // Allow keywords as variable names
+        default:
+            throw error("Expected variable name in for loop")
+        }
+        advance()
+
+        // Parse optional type annotation: : Type
+        var varType = "OclAny"  // Default type
+        if case .colon = current()?.type {
+            advance()  // Consume ':'
+
+            switch current()?.type {
+            case .identifier(let typeName):
+                varType = typeName
+                advance()
+            case .keyword(let typeName):
+                varType = typeName
+                advance()
+            default:
+                throw error("Expected type name after ':'")
+            }
+        }
+
+        // Parse 'in' keyword
+        guard case .keyword("in") = current()?.type else {
+            throw error("Expected 'in' keyword in for loop")
+        }
+        advance()
+
+        // Parse collection expression
+        let collectionExpr = try parseExpression()
+
+        try expect(.rightParen)
+
+        // Parse optional separator
+        var separator: MTLExpression? = nil
+        if case .identifier("separator") = current()?.type {
+            advance()  // Consume 'separator'
+            try expect(.leftParen)
+            separator = try parseExpression()
+            try expect(.rightParen)
+        } else if case .keyword("separator") = current()?.type {
+            advance()  // Consume 'separator' (as keyword)
+            try expect(.leftParen)
+            separator = try parseExpression()
+            try expect(.rightParen)
+        }
+
+        try expect(.rightBracket)
+
+        // Parse body
+        let body = try parseBlock(until: ["/for"])
+
+        // Expect closing [/for]
+        try expect(.slash)
+        try expectKeyword("for")
+        try expect(.rightBracket)
+
+        let variable = MTLVariable(name: varName, type: varType)
+        let binding = MTLBinding(variable: variable, initExpression: collectionExpr)
+
+        return MTLForStatement(binding: binding, separator: separator, body: body)
     }
 
+    /// Parses a let statement: [let var : Type = expr]...[/let]
     private func parseLetStatement() throws -> MTLLetStatement {
-        // TODO: Implement in Phase 4
-        throw MTLParseError.invalidSyntax("Let statement parsing not yet implemented")
+        // Already consumed 'let' keyword
+        debugPrint("Parsing let statement")
+
+        var variables: [MTLBinding] = []
+
+        // Parse variable bindings (comma-separated)
+        while true {
+            // Parse variable name
+            let varName: String
+            switch current()?.type {
+            case .identifier(let id):
+                varName = id
+            case .keyword(let kw):
+                varName = kw  // Allow keywords as variable names
+            default:
+                throw error("Expected variable name in let statement")
+            }
+            advance()
+
+            // Parse optional type annotation: : Type
+            var varType = "OclAny"  // Default type
+            if case .colon = current()?.type {
+                advance()  // Consume ':'
+
+                switch current()?.type {
+                case .identifier(let typeName):
+                    varType = typeName
+                    advance()
+                case .keyword(let typeName):
+                    varType = typeName
+                    advance()
+                default:
+                    throw error("Expected type name after ':'")
+                }
+            }
+
+            // Parse '=' and initialization expression
+            try expect(.operator("="))
+            let initExpr = try parseExpression()
+
+            let variable = MTLVariable(name: varName, type: varType)
+            let binding = MTLBinding(variable: variable, initExpression: initExpr)
+            variables.append(binding)
+
+            // Check for comma (more variables) or right bracket (end)
+            if case .comma = current()?.type {
+                advance()  // Consume comma, continue parsing
+            } else {
+                break  // No more variables
+            }
+        }
+
+        try expect(.rightBracket)
+
+        // Parse body
+        let body = try parseBlock(until: ["/let"])
+
+        // Expect closing [/let]
+        try expect(.slash)
+        try expectKeyword("let")
+        try expect(.rightBracket)
+
+        return MTLLetStatement(variables: variables, body: body)
+    }
+
+    /// Parses a block of statements until one of the specified terminating keywords is encountered.
+    private func parseBlock(until terminators: [String]) throws -> MTLBlock {
+        var statements: [any MTLStatement] = []
+
+        while let token = current() {
+            // Check for terminating keywords
+            if case .leftBracket = token.type {
+                // Check for closing tags like [/if] or keywords like [elseif]
+                if let nextToken = peek() {
+                    // Check for closing tag: [/keyword]
+                    if case .slash = nextToken.type {
+                        if let keywordToken = peek(2), case .keyword(let keyword) = keywordToken.type {
+                            let closingTag = "/\(keyword)"
+                            if terminators.contains(closingTag) {
+                                // Found closing tag terminator
+                                advance()  // Consume '['
+                                return MTLBlock(statements: statements, inlined: false)
+                            }
+                        }
+                    }
+                    // Check for continuation keyword: [elseif] or [else]
+                    else if case .keyword(let keyword) = nextToken.type {
+                        if terminators.contains(keyword) {
+                            // Found keyword terminator
+                            advance()  // Consume '['
+                            return MTLBlock(statements: statements, inlined: false)
+                        }
+                    }
+                }
+            }
+
+            // Parse statement
+            let statement = try parseStatement()
+            statements.append(statement)
+        }
+
+        throw error("Unexpected end of file while parsing block (expected one of: \(terminators.joined(separator: ", ")))")
     }
 
     private func parseFileStatement() throws -> MTLFileStatement {

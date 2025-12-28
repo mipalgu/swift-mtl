@@ -382,5 +382,345 @@ struct MTLParserTests {
         #expect(module.templates.count == 1)
     }
 
-    // Note: Expression, control flow, and advanced feature tests will be added in later phases
+    // MARK: - Expression Parsing Tests
+
+    @Test("Parse template with variable expression")
+    @MainActor
+    func testParseVariableExpression() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = """
+        [module Test('http://example.com')]
+        [template greet(name : String)]
+        Hello [name/]!
+        [/template]
+        """
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["greet"]!
+
+        // Should have 3 statements: "Hello ", expression, "!"
+        #expect(template.body.statements.count == 3)
+
+        // Check expression statement
+        let exprStmt = template.body.statements[1]
+        #expect(exprStmt is MTLExpressionStatement)
+    }
+
+    @Test("Parse template with navigation expression")
+    @MainActor
+    func testParseNavigationExpression() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template showName(person : Person)]Name: [person.name/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["showName"]!
+
+        #expect(template.body.statements.count == 2)
+    }
+
+    @Test("Parse template with string literal")
+    @MainActor
+    func testParseStringLiteral() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()]['Hello, World!'/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        #expect(template.body.statements[0] is MTLExpressionStatement)
+    }
+
+    @Test("Parse template with integer literal")
+    @MainActor
+    func testParseIntegerLiteral() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][42/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    @Test("Parse template with boolean literal")
+    @MainActor
+    func testParseBooleanLiteral() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][true/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    @Test("Parse template with binary expression")
+    @MainActor
+    func testParseBinaryExpression() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][1 + 2/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    @Test("Parse template with string concatenation")
+    @MainActor
+    func testParseStringConcatenation() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template greet(firstName : String, lastName : String)][firstName + ' ' + lastName/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["greet"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    @Test("Parse template with comparison expression")
+    @MainActor
+    func testParseComparisonExpression() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(age : Integer)][age > 18/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    @Test("Parse template with logical expression")
+    @MainActor
+    func testParseLogicalExpression() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(a : Boolean, b : Boolean)][a and b/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    @Test("Parse template with parenthesized expression")
+    @MainActor
+    func testParseParenthesizedExpression() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][(1 + 2) * 3/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    @Test("Parse template with collection size operation")
+    @MainActor
+    func testParseCollectionSizeOperation() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(items : Collection)][items->size()/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    // MARK: - Control Flow Tests
+
+    @Test("Parse if statement with true condition")
+    @MainActor
+    func testParseIfStatementTrue() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][if (true)]YES[/if][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        guard let ifStmt = template.body.statements[0] as? MTLIfStatement else {
+            Issue.record("Expected MTLIfStatement")
+            return
+        }
+        #expect(ifStmt.thenBlock.statements.count == 1)
+        #expect(ifStmt.elseIfBlocks.isEmpty)
+        #expect(ifStmt.elseBlock == nil)
+    }
+
+    @Test("Parse if-else statement")
+    @MainActor
+    func testParseIfElseStatement() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(x : Integer)][if (x > 10)]BIG[else]SMALL[/if][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        guard let ifStmt = template.body.statements[0] as? MTLIfStatement else {
+            Issue.record("Expected MTLIfStatement")
+            return
+        }
+        #expect(ifStmt.thenBlock.statements.count == 1)
+        #expect(ifStmt.elseIfBlocks.isEmpty)
+        #expect(ifStmt.elseBlock != nil)
+        #expect(ifStmt.elseBlock?.statements.count == 1)
+    }
+
+    @Test("Parse if-elseif-else statement")
+    @MainActor
+    func testParseIfElseIfElseStatement() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(x : Integer)][if (x > 10)]BIG[elseif (x > 5)]MEDIUM[else]SMALL[/if][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        guard let ifStmt = template.body.statements[0] as? MTLIfStatement else {
+            Issue.record("Expected MTLIfStatement")
+            return
+        }
+        #expect(ifStmt.thenBlock.statements.count == 1)
+        #expect(ifStmt.elseIfBlocks.count == 1)
+        #expect(ifStmt.elseBlock != nil)
+    }
+
+    @Test("Parse for loop with separator")
+    @MainActor
+    func testParseForLoopWithSeparator() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(items : Collection)][for (item in items) separator(', ')][item/][/for][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        guard let forStmt = template.body.statements[0] as? MTLForStatement else {
+            Issue.record("Expected MTLForStatement")
+            return
+        }
+        #expect(forStmt.binding.variable.name == "item")
+        #expect(forStmt.separator != nil)
+        #expect(forStmt.body.statements.count == 1)
+    }
+
+    @Test("Parse for loop without separator")
+    @MainActor
+    func testParseForLoopWithoutSeparator() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(items : Collection)][for (item in items)][item/][/for][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        guard let forStmt = template.body.statements[0] as? MTLForStatement else {
+            Issue.record("Expected MTLForStatement")
+            return
+        }
+        #expect(forStmt.binding.variable.name == "item")
+        #expect(forStmt.separator == nil)
+        #expect(forStmt.body.statements.count == 1)
+    }
+
+    @Test("Parse for loop with type annotation")
+    @MainActor
+    func testParseForLoopWithType() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(items : Collection)][for (item : String in items)][item/][/for][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        guard let forStmt = template.body.statements[0] as? MTLForStatement else {
+            Issue.record("Expected MTLForStatement")
+            return
+        }
+        #expect(forStmt.binding.variable.name == "item")
+        #expect(forStmt.binding.variable.type == "String")
+    }
+
+    @Test("Parse let statement with single variable")
+    @MainActor
+    func testParseLetStatementSingleVariable() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][let greeting = 'Hello']Use [greeting/][/let][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        guard let letStmt = template.body.statements[0] as? MTLLetStatement else {
+            Issue.record("Expected MTLLetStatement")
+            return
+        }
+        #expect(letStmt.variables.count == 1)
+        #expect(letStmt.variables[0].variable.name == "greeting")
+        #expect(letStmt.body.statements.count == 2)  // "Use " and expression
+    }
+
+    @Test("Parse let statement with type annotation")
+    @MainActor
+    func testParseLetStatementWithType() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][let count : Integer = 42][count/][/let][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        guard let letStmt = template.body.statements[0] as? MTLLetStatement else {
+            Issue.record("Expected MTLLetStatement")
+            return
+        }
+        #expect(letStmt.variables.count == 1)
+        #expect(letStmt.variables[0].variable.name == "count")
+        #expect(letStmt.variables[0].variable.type == "Integer")
+    }
+
+    @Test("Parse let statement with multiple variables")
+    @MainActor
+    func testParseLetStatementMultipleVariables() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][let x = 1, y = 2][x/] [y/][/let][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        guard let letStmt = template.body.statements[0] as? MTLLetStatement else {
+            Issue.record("Expected MTLLetStatement")
+            return
+        }
+        #expect(letStmt.variables.count == 2)
+        #expect(letStmt.variables[0].variable.name == "x")
+        #expect(letStmt.variables[1].variable.name == "y")
+    }
+
+    @Test("Parse nested control flow")
+    @MainActor
+    func testParseNestedControlFlow() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(items : Collection)][for (item in items)][if (item > 0)]POS[else]NEG[/if][/for][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        guard let forStmt = template.body.statements[0] as? MTLForStatement else {
+            Issue.record("Expected MTLForStatement")
+            return
+        }
+        #expect(forStmt.body.statements.count == 1)
+        guard let ifStmt = forStmt.body.statements[0] as? MTLIfStatement else {
+            Issue.record("Expected nested MTLIfStatement")
+            return
+        }
+        #expect(ifStmt.elseBlock != nil)
+    }
+
+    // Note: Advanced feature tests (file/protected/query/macro) will be added in Phase 5
 }
