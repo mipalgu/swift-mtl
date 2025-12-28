@@ -80,7 +80,7 @@ struct GenerateCommand: AsyncParsableCommand {
 
         // Parse MTL template
         if verbose {
-            print("\nParsing MTL template...")
+            print("\n=== Parsing MTL Template ===")
         }
 
         let templateURL = URL(fileURLWithPath: templateFile)
@@ -103,23 +103,146 @@ struct GenerateCommand: AsyncParsableCommand {
             print("  Macros: \(mtlModule.macros.count)")
         }
 
-        // TODO: Load models (Phase 7)
+        // Load models
+        var loadedModels: [String: Resource] = [:]
         if !model.isEmpty {
             if verbose {
-                print("\nModel loading will be implemented in Phase 7")
-                print("Models to load: \(model)")
+                print("\n=== Loading Models ===")
+            }
+
+            for (index, modelPath) in model.enumerated() {
+                let modelURL = URL(fileURLWithPath: modelPath)
+                guard FileManager.default.fileExists(atPath: modelPath) else {
+                    throw ValidationError.fileNotFound(modelPath)
+                }
+
+                // Detect format based on extension
+                let format = detectFormat(from: modelPath)
+
+                if verbose {
+                    print("Loading model \(index + 1): \(modelPath) (format: \(format))")
+                }
+
+                let resource = try await loadModel(from: modelPath, format: format, verbose: verbose)
+
+                // Use filename without extension as model name
+                let modelName = modelURL.deletingPathExtension().lastPathComponent
+                loadedModels[modelName] = resource
+
+                if verbose {
+                    let count = await resource.count()
+                    print("  ✓ Loaded \(count) objects")
+                }
             }
         }
 
-        // TODO: Execute generation (Phase 7)
-        if verbose {
-            print("\nGeneration execution will be implemented in Phase 7")
+        // Determine main template
+        let mainTemplateName: String
+        if let specified = template {
+            mainTemplateName = specified
+            guard mtlModule.templates[mainTemplateName] != nil else {
+                throw ValidationError.generationFailed("Template '\(mainTemplateName)' not found in module")
+            }
+        } else {
+            // Find first template marked as main, or use first template
+            if let main = mtlModule.templates.first(where: { $0.value.isMain }) {
+                mainTemplateName = main.key
+            } else if let first = mtlModule.templates.first {
+                mainTemplateName = first.key
+            } else {
+                throw ValidationError.generationFailed("No templates found in module")
+            }
         }
 
-        print("\n✓ MTL template parsed successfully")
-        print("  Note: Full generation support coming in Phase 7")
+        if verbose {
+            print("\n=== Executing Generation ===")
+            print("Main template: \(mainTemplateName)")
+            print("Output directory: \(output)")
+        }
+
+        // Create output directory if needed
+        if !FileManager.default.fileExists(atPath: output) {
+            let outputURL = URL(fileURLWithPath: output)
+            try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
+        }
+
+        // Execute generation
+        let strategy = MTLFileSystemStrategy(basePath: output)
+        let generator = MTLGenerator(module: mtlModule, generationStrategy: strategy)
+
+        do {
+            try await generator.generate(
+                mainTemplate: mainTemplateName,
+                arguments: [],
+                models: loadedModels
+            )
+        } catch {
+            throw ValidationError.generationFailed(error.localizedDescription)
+        }
+
+        // Display results
+        if verbose {
+            print("\n=== Generation Complete ===")
+            let stats = generator.statistics
+            print("✓ Generation successful")
+            print("  Templates executed: \(stats.templatesExecuted)")
+            print("  Execution time: \(String(format: "%.3f", stats.executionTime * 1000))ms")
+        } else {
+            print("✓ Generation complete")
+        }
     }
 }
+
+// MARK: - Helper Functions
+
+/// Model format enumeration.
+enum ModelFormat: String {
+    case xmi
+    case json
+
+    var description: String {
+        switch self {
+        case .xmi: return "XMI"
+        case .json: return "JSON"
+        }
+    }
+}
+
+/// Detects the model format based on file extension.
+func detectFormat(from path: String) -> ModelFormat {
+    let pathExtension = URL(fileURLWithPath: path).pathExtension.lowercased()
+    switch pathExtension {
+    case "xmi", "ecore":
+        return .xmi
+    case "json":
+        return .json
+    default:
+        return .xmi  // Default to XMI
+    }
+}
+
+/// Loads a model from a file using the appropriate parser.
+func loadModel(
+    from path: String,
+    format: ModelFormat,
+    verbose: Bool
+) async throws -> Resource {
+    let url = URL(fileURLWithPath: path)
+
+    let resource: Resource
+    switch format {
+    case .xmi:
+        let parser = XMIParser(enableDebugging: verbose)
+        resource = try await parser.parse(url)
+    case .json:
+        let parser = JSONParser()
+        resource = try await parser.parse(url)
+    }
+
+    return resource
+}
+
+// MARK: - Error Types
 
 /// Validation errors for the generate command.
 enum ValidationError: Error, CustomStringConvertible {
