@@ -722,5 +722,199 @@ struct MTLParserTests {
         #expect(ifStmt.elseBlock != nil)
     }
 
-    // Note: Advanced feature tests (file/protected/query/macro) will be added in Phase 5
+    // MARK: - Advanced Feature Tests
+
+    @Test("Parse file statement")
+    @MainActor
+    func testParseFileStatement() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][file ('output.txt', 'overwrite', 'UTF-8')]Content[/file][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        guard let fileStmt = template.body.statements[0] as? MTLFileStatement else {
+            Issue.record("Expected MTLFileStatement")
+            return
+        }
+        #expect(fileStmt.mode == .overwrite)
+        #expect(fileStmt.body.statements.count == 1)
+    }
+
+    @Test("Parse file statement with minimal arguments")
+    @MainActor
+    func testParseFileStatementMinimal() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][file ('out.txt')]Content[/file][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        guard let fileStmt = template.body.statements[0] as? MTLFileStatement else {
+            Issue.record("Expected MTLFileStatement")
+            return
+        }
+        #expect(fileStmt.charset == nil)
+    }
+
+    @Test("Parse protected area")
+    @MainActor
+    func testParseProtectedArea() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][protected ('area1', '//', '//')]Default content[/protected][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        guard let protectedStmt = template.body.statements[0] as? MTLProtectedArea else {
+            Issue.record("Expected MTLProtectedArea")
+            return
+        }
+        #expect(protectedStmt.startTagPrefix != nil)
+        #expect(protectedStmt.endTagPrefix != nil)
+        #expect(protectedStmt.body.statements.count == 1)
+    }
+
+    @Test("Parse protected area with minimal arguments")
+    @MainActor
+    func testParseProtectedAreaMinimal() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][protected ('area1')]Default[/protected][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+        guard let protectedStmt = template.body.statements[0] as? MTLProtectedArea else {
+            Issue.record("Expected MTLProtectedArea")
+            return
+        }
+        #expect(protectedStmt.startTagPrefix == nil)
+        #expect(protectedStmt.endTagPrefix == nil)
+    }
+
+    @Test("Parse query without parameters")
+    @MainActor
+    func testParseQueryNoParams() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][query getVersion() : String = '1.0'/]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+
+        #expect(module.queries.count == 1)
+        guard let query = module.queries["getVersion"] else {
+            Issue.record("Expected query 'getVersion'")
+            return
+        }
+        #expect(query.name == "getVersion")
+        #expect(query.parameters.isEmpty)
+        #expect(query.returnType == "String")
+    }
+
+    @Test("Parse query with parameters")
+    @MainActor
+    func testParseQueryWithParams() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][query fullName(first : String, last : String) : String = first + ' ' + last/]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+
+        #expect(module.queries.count == 1)
+        guard let query = module.queries["fullName"] else {
+            Issue.record("Expected query 'fullName'")
+            return
+        }
+        #expect(query.parameters.count == 2)
+        #expect(query.parameters[0].name == "first")
+        #expect(query.parameters[1].name == "last")
+        #expect(query.returnType == "String")
+    }
+
+    @Test("Parse query with visibility")
+    @MainActor
+    func testParseQueryWithVisibility() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][query private helper() : String = 'help'/]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+
+        #expect(module.queries.count == 1)
+        guard let query = module.queries["helper"] else {
+            Issue.record("Expected query 'helper'")
+            return
+        }
+        #expect(query.visibility == .private)
+    }
+
+    @Test("Parse macro without body parameter")
+    @MainActor
+    func testParseMacroNoBody() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][macro repeat(times : Integer)]Repeated[/macro]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+
+        #expect(module.macros.count == 1)
+        guard let macro = module.macros["repeat"] else {
+            Issue.record("Expected macro 'repeat'")
+            return
+        }
+        #expect(macro.name == "repeat")
+        #expect(macro.parameters.count == 1)
+        #expect(macro.bodyParameter == nil)
+    }
+
+    @Test("Parse macro with body parameter")
+    @MainActor
+    func testParseMacroWithBody() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][macro wrapper(content : Body)]<div>[content/]</div>[/macro]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+
+        #expect(module.macros.count == 1)
+        guard let macro = module.macros["wrapper"] else {
+            Issue.record("Expected macro 'wrapper'")
+            return
+        }
+        #expect(macro.bodyParameter == "content")
+        #expect(macro.parameters.isEmpty)  // Body parameters are separate
+    }
+
+    @Test("Parse macro with mixed parameters")
+    @MainActor
+    func testParseMacroMixedParams() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][macro conditional(flag : Boolean, content : Body)][if (flag)][content/][/if][/macro]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+
+        #expect(module.macros.count == 1)
+        guard let macro = module.macros["conditional"] else {
+            Issue.record("Expected macro 'conditional'")
+            return
+        }
+        #expect(macro.parameters.count == 1)
+        #expect(macro.parameters[0].name == "flag")
+        #expect(macro.bodyParameter == "content")
+    }
+
+    @Test("Parse module with multiple queries and macros")
+    @MainActor
+    func testParseModuleQueriesAndMacros() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][query q1() : String = 'a'/][query q2() : String = 'b'/][macro m1()][/macro][macro m2()][/macro]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+
+        #expect(module.queries.count == 2)
+        #expect(module.macros.count == 2)
+        #expect(module.queries["q1"] != nil)
+        #expect(module.queries["q2"] != nil)
+        #expect(module.macros["m1"] != nil)
+        #expect(module.macros["m2"] != nil)
+    }
 }

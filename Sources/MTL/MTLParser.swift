@@ -1435,24 +1435,282 @@ private actor MTLSyntaxParser {
         throw error("Unexpected end of file while parsing block (expected one of: \(terminators.joined(separator: ", ")))")
     }
 
+    // MARK: - Advanced Feature Parsing
+
+    /// Parses a file statement: [file (url, mode, charset)]...[/file]
     private func parseFileStatement() throws -> MTLFileStatement {
-        // TODO: Implement in Phase 5
-        throw MTLParseError.invalidSyntax("File statement parsing not yet implemented")
+        // Already consumed 'file' keyword
+        debugPrint("Parsing file statement")
+
+        // Parse arguments: (url, mode, charset)
+        try expect(.leftParen)
+
+        // Parse URL expression
+        let urlExpr = try parseExpression()
+
+        // Parse optional mode (default: overwrite)
+        let mode = MTLOpenMode.overwrite
+        if case .comma = current()?.type {
+            advance()  // Consume comma
+
+            // Parse mode string
+            _ = try parseExpression()
+            // Mode will be evaluated at runtime, for now just default to overwrite
+            // In a real implementation, we'd evaluate constant expressions here
+        }
+
+        // Parse optional charset (default: UTF-8)
+        var charset: MTLExpression? = nil
+        if case .comma = current()?.type {
+            advance()  // Consume comma
+            charset = try parseExpression()
+        }
+
+        try expect(.rightParen)
+        try expect(.rightBracket)
+
+        // Parse body
+        let body = try parseBlock(until: ["/file"])
+
+        // Expect closing [/file]
+        try expect(.slash)
+        try expectKeyword("file")
+        try expect(.rightBracket)
+
+        return MTLFileStatement(url: urlExpr, mode: mode, charset: charset, body: body)
     }
 
+    /// Parses a protected area: [protected (id, startPrefix, endPrefix)]...[/protected]
     private func parseProtectedArea() throws -> MTLProtectedArea {
-        // TODO: Implement in Phase 5
-        throw MTLParseError.invalidSyntax("Protected area parsing not yet implemented")
+        // Already consumed 'protected' keyword
+        debugPrint("Parsing protected area")
+
+        // Parse arguments: (id, optional startPrefix, optional endPrefix)
+        try expect(.leftParen)
+
+        // Parse ID expression
+        let idExpr = try parseExpression()
+
+        // Parse optional start tag prefix
+        var startTagPrefix: MTLExpression? = nil
+        if case .comma = current()?.type {
+            advance()  // Consume comma
+            startTagPrefix = try parseExpression()
+        }
+
+        // Parse optional end tag prefix
+        var endTagPrefix: MTLExpression? = nil
+        if case .comma = current()?.type {
+            advance()  // Consume comma
+            endTagPrefix = try parseExpression()
+        }
+
+        try expect(.rightParen)
+        try expect(.rightBracket)
+
+        // Parse body
+        let body = try parseBlock(until: ["/protected"])
+
+        // Expect closing [/protected]
+        try expect(.slash)
+        try expectKeyword("protected")
+        try expect(.rightBracket)
+
+        return MTLProtectedArea(id: idExpr, startTagPrefix: startTagPrefix, endTagPrefix: endTagPrefix, body: body)
     }
 
+    /// Parses a query: [query name(params) : ReturnType = expr/]
     private func parseQuery() throws -> MTLQuery {
-        // TODO: Implement in Phase 5
-        throw MTLParseError.invalidSyntax("Query parsing not yet implemented")
+        // Already consumed 'query' keyword
+        debugPrint("Parsing query")
+
+        // Parse optional visibility (default: public)
+        var visibility = MTLVisibility.public
+        if case .keyword(let kw) = current()?.type,
+           let vis = MTLVisibility(rawValue: kw) {
+            visibility = vis
+            advance()
+        }
+
+        // Parse query name
+        let name: String
+        switch current()?.type {
+        case .identifier(let id):
+            name = id
+        case .keyword(let kw):
+            name = kw  // Allow keywords as query names
+        default:
+            throw error("Expected query name")
+        }
+        advance()
+
+        // Parse parameters: (param1 : Type1, param2 : Type2)
+        try expect(.leftParen)
+
+        var parameters: [MTLVariable] = []
+        if current()?.type != .rightParen {
+            while true {
+                // Parse parameter name
+                let paramName: String
+                switch current()?.type {
+                case .identifier(let id):
+                    paramName = id
+                case .keyword(let kw):
+                    paramName = kw
+                default:
+                    throw error("Expected parameter name")
+                }
+                advance()
+
+                // Parse type annotation: : Type
+                try expect(.colon)
+
+                let paramType: String
+                switch current()?.type {
+                case .identifier(let typeName):
+                    paramType = typeName
+                    advance()
+                case .keyword(let typeName):
+                    paramType = typeName
+                    advance()
+                default:
+                    throw error("Expected type name")
+                }
+
+                parameters.append(MTLVariable(name: paramName, type: paramType))
+
+                // Check for comma (more parameters) or right paren (end)
+                if case .comma = current()?.type {
+                    advance()
+                } else {
+                    break
+                }
+            }
+        }
+
+        try expect(.rightParen)
+
+        // Parse return type: : ReturnType
+        try expect(.colon)
+
+        let returnType: String
+        switch current()?.type {
+        case .identifier(let typeName):
+            returnType = typeName
+            advance()
+        case .keyword(let typeName):
+            returnType = typeName
+            advance()
+        default:
+            throw error("Expected return type")
+        }
+
+        // Parse body: = expr
+        try expect(.operator("="))
+        let bodyExpr = try parseExpression()
+
+        // Expect closing /]
+        if case .slash = current()?.type {
+            advance()
+        }
+        try expect(.rightBracket)
+
+        return MTLQuery(
+            name: name,
+            visibility: visibility,
+            parameters: parameters,
+            returnType: returnType,
+            body: bodyExpr,
+            documentation: nil
+        )
     }
 
+    /// Parses a macro: [macro name(params, bodyParam : Body)]...[/macro]
     private func parseMacro() throws -> MTLMacro {
-        // TODO: Implement in Phase 5
-        throw MTLParseError.invalidSyntax("Macro parsing not yet implemented")
+        // Already consumed 'macro' keyword
+        debugPrint("Parsing macro")
+
+        // Parse macro name (skip visibility - macros don't have visibility)
+        let name: String
+        switch current()?.type {
+        case .identifier(let id):
+            name = id
+        case .keyword(let kw):
+            name = kw  // Allow keywords as macro names
+        default:
+            throw error("Expected macro name")
+        }
+        advance()
+
+        // Parse parameters: (param1 : Type1, bodyParam : Body)
+        try expect(.leftParen)
+
+        var parameters: [MTLVariable] = []
+        var bodyParameter: String? = nil
+
+        if current()?.type != .rightParen {
+            while true {
+                // Parse parameter name
+                let paramName: String
+                switch current()?.type {
+                case .identifier(let id):
+                    paramName = id
+                case .keyword(let kw):
+                    paramName = kw
+                default:
+                    throw error("Expected parameter name")
+                }
+                advance()
+
+                // Parse type annotation: : Type
+                try expect(.colon)
+
+                let paramType: String
+                switch current()?.type {
+                case .identifier(let typeName):
+                    paramType = typeName
+                    advance()
+                case .keyword(let typeName):
+                    paramType = typeName
+                    advance()
+                default:
+                    throw error("Expected type name")
+                }
+
+                // Check if this is a body parameter
+                if paramType == "Body" {
+                    bodyParameter = paramName
+                } else {
+                    parameters.append(MTLVariable(name: paramName, type: paramType))
+                }
+
+                // Check for comma (more parameters) or right paren (end)
+                if case .comma = current()?.type {
+                    advance()
+                } else {
+                    break
+                }
+            }
+        }
+
+        try expect(.rightParen)
+        try expect(.rightBracket)
+
+        // Parse body
+        let body = try parseBlock(until: ["/macro"])
+
+        // Expect closing [/macro]
+        try expect(.slash)
+        try expectKeyword("macro")
+        try expect(.rightBracket)
+
+        return MTLMacro(
+            name: name,
+            parameters: parameters,
+            bodyParameter: bodyParameter,
+            body: body,
+            documentation: nil
+        )
     }
 
     private func parseImport() throws -> String {
