@@ -917,4 +917,149 @@ struct MTLParserTests {
         #expect(module.macros["m1"] != nil)
         #expect(module.macros["m2"] != nil)
     }
+
+    // MARK: - Error Handling Tests
+
+    @Test("Parse error - missing module declaration")
+    @MainActor
+    func testErrorMissingModule() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[template test()]Hello[/template]"
+
+        await #expect(throws: MTLParseError.self) {
+            try await parser.parse(source, filename: "test.mtl")
+        }
+    }
+
+    @Test("Parse error - unclosed directive bracket")
+    @MainActor
+    func testErrorUnclosedBracket() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()[if (true)]text[/if][/template]"
+
+        await #expect(throws: MTLParseError.self) {
+            try await parser.parse(source, filename: "test.mtl")
+        }
+    }
+
+    @Test("Parse error - unclosed if block")
+    @MainActor
+    func testErrorUnclosedIfBlock() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][if (true)]text[/template]"
+
+        await #expect(throws: MTLParseError.self) {
+            try await parser.parse(source, filename: "test.mtl")
+        }
+    }
+
+    @Test("Parse error - unclosed for block")
+    @MainActor
+    func testErrorUnclosedForBlock() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][for (i in items)]text[/template]"
+
+        await #expect(throws: MTLParseError.self) {
+            try await parser.parse(source, filename: "test.mtl")
+        }
+    }
+
+    @Test("Parse error - unclosed let block")
+    @MainActor
+    func testErrorUnclosedLetBlock() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][let x = 1]text[/template]"
+
+        await #expect(throws: MTLParseError.self) {
+            try await parser.parse(source, filename: "test.mtl")
+        }
+    }
+
+    @Test("Parse error - unclosed file block")
+    @MainActor
+    func testErrorUnclosedFileBlock() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][file ('out.txt', 'overwrite', 'UTF-8')]text[/template]"
+
+        await #expect(throws: MTLParseError.self) {
+            try await parser.parse(source, filename: "test.mtl")
+        }
+    }
+
+    @Test("Parse error - unclosed macro block")
+    @MainActor
+    func testErrorUnclosedMacroBlock() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][macro test()]text"
+
+        await #expect(throws: MTLParseError.self) {
+            try await parser.parse(source, filename: "test.mtl")
+        }
+    }
+
+    @Test("Parse error - unclosed template block")
+    @MainActor
+    func testErrorUnclosedTemplateBlock() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()]text"
+
+        await #expect(throws: MTLParseError.self) {
+            try await parser.parse(source, filename: "test.mtl")
+        }
+    }
+
+    @Test("Parse error - invalid expression syntax")
+    @MainActor
+    func testErrorInvalidExpression() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][if ()]text[/if][/template]"
+
+        await #expect(throws: MTLParseError.self) {
+            try await parser.parse(source, filename: "test.mtl")
+        }
+    }
+
+    @Test("Parse error - missing template name")
+    @MainActor
+    func testErrorMissingTemplateName() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template ()]text[/template]"
+
+        await #expect(throws: MTLParseError.self) {
+            try await parser.parse(source, filename: "test.mtl")
+        }
+    }
+
+    @Test("Parse error - missing query name")
+    @MainActor
+    func testErrorMissingQueryName() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][query () : String = 'test'/]"
+
+        await #expect(throws: MTLParseError.self) {
+            try await parser.parse(source, filename: "test.mtl")
+        }
+    }
+
+    @Test("Parse error - unexpected end of file")
+    @MainActor
+    func testErrorUnexpectedEOF() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()"
+
+        await #expect(throws: MTLParseError.self) {
+            try await parser.parse(source, filename: "test.mtl")
+        }
+    }
+
+    @Test("Parse error - mismatched closing tag")
+    @MainActor
+    func testErrorMismatchedClosingTag() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][if (true)]text[/for][/template]"
+
+        await #expect(throws: MTLParseError.self) {
+            try await parser.parse(source, filename: "test.mtl")
+        }
+    }
 }

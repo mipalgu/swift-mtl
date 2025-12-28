@@ -1,0 +1,6 @@
+[module UnclosedBlock('http://example.com')]
+
+[template main()]
+[if (true)]
+This if block is never closed
+[/template]

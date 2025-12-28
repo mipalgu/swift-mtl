@@ -1,0 +1,6 @@
+[module SimpleHello('http://example.com')]
+
+[template main()]
+Hello, World!
+This is a simple MTL template.
+[/template]

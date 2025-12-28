@@ -1,0 +1,8 @@
+[module WithExpressions('http://example.com')]
+
+[query getVersion() : String = '1.0.0'/]
+
+[template main()]
+Numbers: [1 + 2 + 3/]
+Version: 1.0.0
+[/template]

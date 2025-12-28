@@ -1,0 +1,6 @@
+[module InvalidSyntax('http://example.com')]
+
+[template main()]
+[if (true)
+Missing closing bracket
+[/template]

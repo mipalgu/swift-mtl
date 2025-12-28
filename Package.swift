@@ -20,6 +20,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-collections", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.6.2"),
         .package(url: "https://github.com/mipalgu/swift-ecore", branch: "main"),
+        .package(url: "https://github.com/swiftlang/swift-subprocess", from: "0.1.0"),
         .package(path: "../swift-aql"),
     ],
     targets: [
@@ -52,6 +53,10 @@ let package = Package(
             dependencies: [
                 "MTL",
                 .product(name: "ECore", package: "swift-ecore"),
+                .product(name: "Subprocess", package: "swift-subprocess"),
+            ],
+            exclude: [
+                "README.md"
             ],
             resources: [
                 .copy("Resources")

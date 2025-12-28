@@ -1,0 +1,11 @@
+[module WithFileBlocks('http://example.com')]
+
+[template main()]
+[file ('output1.txt', 'overwrite', 'UTF-8')]
+File 1 content
+[/file]
+
+[file ('output2.txt', 'overwrite', 'UTF-8')]
+File 2 content
+[/file]
+[/template]

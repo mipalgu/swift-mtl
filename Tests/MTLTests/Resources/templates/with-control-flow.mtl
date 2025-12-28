@@ -1,0 +1,15 @@
+[module WithControlFlow('http://example.com')]
+
+[template main()]
+[if (true)]
+Condition is true
+[else]
+Condition is false
+[/if]
+
+Items: 1, 2, 3
+
+[let temp = 'Hello']
+Message: [temp/]
+[/let]
+[/template]
