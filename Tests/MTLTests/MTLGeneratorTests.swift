@@ -336,9 +336,9 @@ struct MTLGeneratorTests {
                         initExpression: MTLExpression(
                             AQLCollectionExpression(
                                 source: AQLLiteralExpression(value: EcoreValueArray([
-                                    "A" as EcoreValue,
-                                    "B" as EcoreValue,
-                                    "C" as EcoreValue
+                                    "A" as any EcoreValue,
+                                    "B" as any EcoreValue,
+                                    "C" as any EcoreValue
                                 ])),
                                 operation: .select,
                                 iterator: "x",

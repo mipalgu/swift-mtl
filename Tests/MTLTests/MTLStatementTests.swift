@@ -340,9 +340,9 @@ struct MTLStatementTests {
                 variable: MTLVariable(name: "item", type: "String"),
                 initExpression: MTLExpression(
                     AQLLiteralExpression(value: EcoreValueArray([
-                        "A" as EcoreValue,
-                        "B" as EcoreValue,
-                        "C" as EcoreValue
+                        "A" as any EcoreValue,
+                        "B" as any EcoreValue,
+                        "C" as any EcoreValue
                     ]))
                 )
             ),
@@ -371,9 +371,9 @@ struct MTLStatementTests {
                 variable: MTLVariable(name: "item", type: "String"),
                 initExpression: MTLExpression(
                     AQLLiteralExpression(value: EcoreValueArray([
-                        "A" as EcoreValue,
-                        "B" as EcoreValue,
-                        "C" as EcoreValue
+                        "A" as any EcoreValue,
+                        "B" as any EcoreValue,
+                        "C" as any EcoreValue
                     ]))
                 )
             ),
@@ -404,7 +404,7 @@ struct MTLStatementTests {
                 variable: MTLVariable(name: "item", type: "String"),
                 initExpression: MTLExpression(
                     AQLLiteralExpression(value: EcoreValueArray([
-                        "X" as EcoreValue
+                        "X" as any EcoreValue
                     ]))
                 )
             ),
