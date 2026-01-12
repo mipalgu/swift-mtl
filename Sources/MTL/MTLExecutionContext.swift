@@ -166,6 +166,7 @@ public final class MTLExecutionContext: Sendable {
     ///   - module: The MTL module to execute
     ///   - generationStrategy: The output strategy for generated text
     ///   - aqlContext: Optional AQL context (default: creates new one)
+    ///   - protectedAreaManager: Optional protected area manager for preserving user code
     public init(
         module: MTLModule,
         generationStrategy: any MTLGenerationStrategy,
