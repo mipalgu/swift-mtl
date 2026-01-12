@@ -56,7 +56,8 @@ struct MTLProtectedAreaTests {
         let manager = MTLProtectedAreaManager()
 
         // Create temporary file with protected area
-        let tempFile = "/tmp/mtl-test-\(UUID().uuidString).txt"
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempFile = tempDir.appendingPathComponent("mtl-test-\(UUID().uuidString).txt").path
         let content = """
         Generated code
         // START PROTECTED REGION area1
