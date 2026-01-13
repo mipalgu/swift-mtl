@@ -422,3 +422,12 @@ Contributions are welcome! Please:
 ## Support
 
 For issues, questions, or feature requests, please open an issue on GitHub.
+
+## References
+
+This implementation is based on the following standards and technologies:
+
+- [OMG MOFM2T (MOF Model-to-Text Transformation)](https://www.omg.org/spec/MOFM2T/) - The model-to-text standard
+- [Eclipse Acceleo](https://eclipse.dev/acceleo/) - The reference MTL implementation
+- [OMG OCL (Object Constraint Language)](https://www.omg.org/spec/OCL/) - Expression language for queries
+- [Eclipse Modeling Framework (EMF)](https://eclipse.dev/emf/) - The metamodelling foundation
