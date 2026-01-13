@@ -304,6 +304,6 @@ extends [c.superClass.name/]
 
 ## See Also
 
-- [OMG MOFM2T (MOF Model-to-Text Transformation)](https://www.omg.org/spec/MOFM2T/) - The model-to-text standard
-- [Eclipse Acceleo](https://eclipse.dev/acceleo/) - The reference MTL implementation
-- [OMG OCL (Object Constraint Language)](https://www.omg.org/spec/OCL/) - Expression language for queries
+- [OMG MOFM2T (MOF Model-to-Text Transformation)](https://www.omg.org/spec/MOFM2T/)
+- [Eclipse Acceleo](https://eclipse.dev/acceleo/)
+- [OMG OCL (Object Constraint Language)](https://www.omg.org/spec/OCL/)
