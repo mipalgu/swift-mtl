@@ -4,9 +4,11 @@ Learn the fundamental concepts of the Model-to-Text Language.
 
 ## Overview
 
-MTL (Model-to-Text Language) is a template-based code generation language defined by the
-[OMG MOFM2T (MOF Model-to-Text Transformation)](https://www.omg.org/spec/MOFM2T/) standard.
-The most widely used MTL implementation is [Eclipse Acceleo](https://eclipse.dev/acceleo/).
+MTL (Model-to-Text Language) is a template-based code generation
+language defined by the OMG MOFM2T (MOF Model-to-Text
+Transformation) ([OMG MOFM2T](https://www.omg.org/spec/MOFM2T/))
+standard. The most widely used MTL implementation is Eclipse Acceleo
+([Eclipse Acceleo](https://eclipse.dev/acceleo/)).
 
 MTL allows you to define templates that combine static text with dynamic content
 extracted from models.
