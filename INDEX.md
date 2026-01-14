@@ -1,6 +1,9 @@
 # Swift MTL
 
-A pure Swift implementation of the [OMG MOFM2T](https://www.omg.org/spec/MOFM2T/) standard for template-based code generation.
+The [swift-mtl](https://github.com/mipalgu/swift-mtl) package provides
+a pure Swift implementation of the
+[OMG MOFM2T](https://www.omg.org/spec/MOFM2T/) standard for
+template-based code generation.
 
 ## Installation
 
