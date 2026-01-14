@@ -17,12 +17,6 @@ dependencies: [
 - Swift 6.0 or later
 - macOS 15.0+
 
-## Documentation
-
-- [Getting Started](https://mipalgu.github.io/swift-mtl/documentation/mtl/gettingstarted)
-- [Understanding MTL](https://mipalgu.github.io/swift-mtl/documentation/mtl/understandingmtl)
-- [API Reference](https://mipalgu.github.io/swift-mtl/documentation/mtl)
-
 ## References
 
 - [OMG MOFM2T (MOF Model-to-Text Transformation)](https://www.omg.org/spec/MOFM2T/)
@@ -36,3 +30,8 @@ dependencies: [
 - [swift-atl](https://github.com/mipalgu/swift-atl) - ATL model transformations
 - [swift-aql](https://github.com/mipalgu/swift-aql) - AQL model queries
 - [swift-modelling](https://github.com/mipalgu/swift-modelling) - Unified MDE toolkit
+
+## Documentation
+
+The package provides template-based model-to-text transformation capabilities.
+For details, see [Getting Started](https://mipalgu.github.io/swift-mtl/documentation/mtl/gettingstarted) and [Understanding MTL](https://mipalgu.github.io/swift-mtl/documentation/mtl/understandingmtl).
