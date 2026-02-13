@@ -1060,15 +1060,42 @@ private actor MTLSyntaxParser {
         while true {
             switch current()?.type {
             case .dot:
-                // Property navigation: obj.prop
+                // Property navigation or method call: obj.prop or obj.method(args)
                 advance()
-                guard case .identifier(let propName) = current()?.type else {
+
+                // Get property/method name (allow keywords as property names)
+                let propName: String
+                switch current()?.type {
+                case .identifier(let name):
+                    propName = name
+                case .keyword(let name):
+                    // Allow keywords as property/method names (e.g., oclIsKindOf)
+                    propName = name
+                default:
                     throw error("Expected property name after '.'")
                 }
                 advance()
-                expr = MTLExpression(
-                    AQLNavigationExpression(source: expr.aqlExpression, property: propName)
-                )
+
+                // Check for method call: obj.method(args)
+                if current()?.type == .leftParen {
+                    advance()
+                    var args: [any AQLExpression] = []
+                    if current()?.type != .rightParen {
+                        args.append(try parseExpression().aqlExpression)
+                        while current()?.type == .comma {
+                            advance()
+                            args.append(try parseExpression().aqlExpression)
+                        }
+                    }
+                    try expect(.rightParen)
+                    expr = MTLExpression(
+                        AQLCallExpression(source: expr.aqlExpression, methodName: propName, arguments: args)
+                    )
+                } else {
+                    expr = MTLExpression(
+                        AQLNavigationExpression(source: expr.aqlExpression, property: propName)
+                    )
+                }
 
             case .operator("->"):
                 // Collection operation: obj->select(...)

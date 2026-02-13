@@ -1062,4 +1062,78 @@ struct MTLParserTests {
             try await parser.parse(source, filename: "test.mtl")
         }
     }
+
+    // MARK: - Method Call Tests
+
+    @Test("Parse method call with no arguments")
+    @MainActor
+    func testParseMethodCallNoArgs() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(obj : MyClass)][obj.someMethod()/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    @Test("Parse method call with single argument")
+    @MainActor
+    func testParseMethodCallSingleArg() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(e : Expression)][e.oclIsKindOf(AndExpression)/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    @Test("Parse method call with multiple arguments")
+    @MainActor
+    func testParseMethodCallMultipleArgs() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(obj : MyClass)][obj.method(a, b, c)/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    @Test("Parse chained method calls")
+    @MainActor
+    func testParseChainedMethodCalls() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(e : Expression)][e.oclAsType(AndExpression).leftExpression/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    @Test("Parse oclIsTypeOf method call")
+    @MainActor
+    func testParseOclIsTypeOf() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(e : Expression)][e.oclIsTypeOf(BooleanConstant)/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    @Test("Parse oclAsType method call")
+    @MainActor
+    func testParseOclAsType() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(e : Expression)][e.oclAsType(OrExpression)/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
 }
