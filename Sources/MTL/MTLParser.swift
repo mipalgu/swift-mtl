@@ -1222,6 +1222,14 @@ private actor MTLSyntaxParser {
             advance()
             return MTLExpression(AQLVariableExpression(name: name))
 
+        case .keyword("not"):
+            // Unary negation operator
+            advance()
+            let operand = try parseNavigationExpression()
+            return MTLExpression(
+                AQLCallExpression(source: operand.aqlExpression, methodName: "not", arguments: [])
+            )
+
         case .keyword(let keyword):
             // Some keywords can be used as variable names in expressions
             advance()
