@@ -1048,25 +1048,47 @@ private actor MTLSyntaxParser {
 
     /// Parses multiplicative expression (*, /).
     private func parseMultiplicativeExpression() throws -> MTLExpression {
-        var left = try parseNavigationExpression()
+        var left = try parseUnaryExpression()
 
         while true {
             switch current()?.type {
             case .operator("*"):
                 advance()
-                let right = try parseNavigationExpression()
+                let right = try parseUnaryExpression()
                 left = MTLExpression(
                     AQLBinaryExpression(left: left.aqlExpression, op: .multiply, right: right.aqlExpression)
                 )
             case .operator("/"):
                 advance()
-                let right = try parseNavigationExpression()
+                let right = try parseUnaryExpression()
                 left = MTLExpression(
                     AQLBinaryExpression(left: left.aqlExpression, op: .divide, right: right.aqlExpression)
                 )
             default:
                 return left
             }
+        }
+    }
+
+    /// Parses unary expression (not, -).
+    private func parseUnaryExpression() throws -> MTLExpression {
+        switch current()?.type {
+        case .keyword("not"):
+            advance()
+            let operand = try parseUnaryExpression()  // Right-associative
+            return MTLExpression(
+                AQLUnaryExpression(op: .not, operand: operand.aqlExpression)
+            )
+        case .operator("-"):
+            // Check if this is unary minus or binary subtract
+            // Unary minus only appears before primary expressions
+            advance()
+            let operand = try parseUnaryExpression()  // Right-associative
+            return MTLExpression(
+                AQLUnaryExpression(op: .negate, operand: operand.aqlExpression)
+            )
+        default:
+            return try parseNavigationExpression()
         }
     }
 
@@ -1243,14 +1265,6 @@ private actor MTLSyntaxParser {
         case .identifier(let name):
             advance()
             return MTLExpression(AQLVariableExpression(name: name))
-
-        case .keyword("not"):
-            // Unary negation operator
-            advance()
-            let operand = try parseNavigationExpression()
-            return MTLExpression(
-                AQLCallExpression(source: operand.aqlExpression, methodName: "not", arguments: [])
-            )
 
         case .keyword(let keyword):
             // Some keywords can be used as variable names in expressions
