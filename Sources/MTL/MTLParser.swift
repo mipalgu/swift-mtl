@@ -1136,6 +1136,7 @@ private actor MTLSyntaxParser {
         case "notEmpty": operation = .notEmpty
         case "first": operation = .first
         case "last": operation = .last
+        case "indexOf": operation = .indexOf
         default:
             throw error("Unknown collection operation: \(opName)")
         }
@@ -1150,6 +1151,20 @@ private actor MTLSyntaxParser {
             }
             return MTLExpression(
                 AQLCollectionExpression(source: source.aqlExpression, operation: operation)
+            )
+        }
+
+        // Operations that take a single argument (not an iterator pattern)
+        if operation == .indexOf {
+            try expect(.leftParen)
+            let argExpr = try parseExpression()
+            try expect(.rightParen)
+            return MTLExpression(
+                AQLCollectionExpression(
+                    source: source.aqlExpression,
+                    operation: operation,
+                    body: argExpr.aqlExpression
+                )
             )
         }
 
