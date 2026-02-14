@@ -1136,4 +1136,40 @@ struct MTLParserTests {
 
         #expect(template.body.statements.count == 1)
     }
+
+    @Test("Parse oclIsUndefined method call")
+    @MainActor
+    func testParseOclIsUndefined() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(x : String)][x.oclIsUndefined()/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    @Test("Parse null literal")
+    @MainActor
+    func testParseNullLiteral() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test()][null/][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
+
+    @Test("Parse comparison with null")
+    @MainActor
+    func testParseComparisonWithNull() async throws {
+        let parser = MTLParser(enableDebugging: false)
+        let source = "[module Test('http://example.com')][template test(x : String)][if (x <> null)]not null[/if][/template]"
+
+        let module = try await parser.parse(source, filename: "test.mtl")
+        let template = module.templates["test"]!
+
+        #expect(template.body.statements.count == 1)
+    }
 }

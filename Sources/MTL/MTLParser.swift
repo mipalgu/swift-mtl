@@ -130,7 +130,10 @@ private actor MTLLexer {
         "in", "and", "or", "not", "xor", "implies",
         "select", "reject", "collect", "forAll", "exists", "any",
         "size", "isEmpty", "notEmpty", "first", "last",
-        "oclIsKindOf", "oclIsTypeOf", "oclAsType"
+        "oclIsKindOf", "oclIsTypeOf", "oclAsType", "oclIsUndefined",
+
+        // Null literal
+        "null"
     ]
 
     // MARK: - Operators
@@ -891,20 +894,34 @@ private actor MTLSyntaxParser {
 
         switch token.type {
         case .keyword(let keyword):
-            advance()  // Consume the keyword
+            // Check if this is a statement keyword
             switch keyword {
             case "if":
+                advance()  // Consume the keyword
                 return try parseIfStatement()
             case "for":
+                advance()  // Consume the keyword
                 return try parseForStatement()
             case "let":
+                advance()  // Consume the keyword
                 return try parseLetStatement()
             case "file":
+                advance()  // Consume the keyword
                 return try parseFileStatement()
             case "protected":
+                advance()  // Consume the keyword
                 return try parseProtectedArea()
             default:
-                throw error("Unknown statement keyword: \(keyword)")
+                // Not a statement keyword, treat as expression
+                let expr = try parseExpression()
+
+                // Check for / before ]
+                if current()?.type == .slash {
+                    advance()
+                }
+
+                try expect(.rightBracket)
+                return MTLExpressionStatement(expression: expr)
             }
 
         case .slash:
@@ -1216,6 +1233,11 @@ private actor MTLSyntaxParser {
         case .booleanLiteral(let value):
             advance()
             return MTLExpression(AQLLiteralExpression(value: value))
+
+        // Null literal
+        case .keyword("null"):
+            advance()
+            return MTLExpression(AQLLiteralExpression(value: nil))
 
         // Variable or keyword used as variable
         case .identifier(let name):
