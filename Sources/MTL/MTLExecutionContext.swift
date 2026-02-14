@@ -472,10 +472,11 @@ public final class MTLExecutionContext: Sendable {
     /// - Parameters:
     ///   - alias: The model alias used in templates
     ///   - resource: The model resource
-    public func registerModel(_ alias: String, resource: Resource) {
+    public func registerModel(_ alias: String, resource: Resource) async {
         models[alias] = resource
 
-        // TODO: Register model elements in AQL context for navigation
+        // Register resource with AQL execution engine for UUID resolution
+        await aqlContext.executionEngine.registerResource(resource, alias: alias)
     }
 
     /// Retrieves a registered model by alias.

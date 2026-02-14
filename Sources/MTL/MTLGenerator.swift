@@ -204,7 +204,7 @@ public final class MTLGenerator {
 
             // Register all models
             for (alias, resource) in models {
-                executionContext.registerModel(alias, resource: resource)
+                await executionContext.registerModel(alias, resource: resource)
             }
 
             // Find the main template
