@@ -263,6 +263,58 @@ Default content
 [/protected]
 ```
 
+### Collected Sets and Deferred Blocks
+
+Values such as imports or includes are gathered while a file is generated and
+rendered once the file body is complete. Sets are scoped to the enclosing
+`[file]` block, keep insertion order and ignore duplicates.
+
+```
+[collect ('imports', 'a.b.C')/]
+[collect ('imports', typeNames)/]
+[emit ('imports') in(items->sortedBy(s | s)) separator('\n')]import [item/];[/emit]
+```
+
+- `[collect ('set', expr)/]` adds a string or a collection of strings.
+- `[emit ('set') ...]...[/emit]` marks where the set is rendered. The block is
+  rendered once per element with `item` bound to the element and `items` bound
+  to the whole collection. Optional clauses: `separator(text)` between
+  elements, `in(expr)` to sort, group or filter the elements (evaluated with
+  `items` bound), and `once` to render the block a single time with `items`
+  bound and `item` unbound. Emit blocks cannot be nested.
+- `collected('set')` returns the values collected so far, for conflict checks.
+
+### Regeneration Merge
+
+A module can declare how an existing target file is merged with new output:
+
+```
+[merge ('/**', '*/', '@generated', '@generated NOT', 'braces')/]
+```
+
+The arguments are the comment start and end of leading comments (an empty end
+means a line comment), the generated tag, the keep tag and the strategy
+(`braces` or `indentation`, default `braces`). Further arguments of the form
+`'key=value'` adjust the lexical conventions: `lineComments` (space-separated
+markers), `blockComment` (start and end separated by a space), `quotes`,
+`terminators` (characters that end a member; `\n` for newline-terminated
+languages) and `opener`.
+
+When the target exists and force overwrite is off, blocks whose leading
+comment contains the keep tag, or no tag at all, are preserved; blocks with
+the generated tag are replaced; new tagged blocks are added; generated blocks
+that are no longer produced are removed. Blocks are matched by normalised
+signature within the matching parent. Lines of an `[emit]` region present in
+the old file but missing from the new one are kept.
+
+### Generator Options and Post-Processing
+
+`MTLFileSystemStrategy` and `MTLInMemoryStrategy` accept
+`MTLGeneratorOptions` (`forceOverwrite`, `redirectionPattern` such as
+`.{0}.new`, `lineDelimiter`) and an ordered list of `MTLFilePostProcessor`
+values that transform the content before it is written. Existing `[protected]`
+areas are preserved automatically when a file is regenerated.
+
 ### Queries
 
 Define reusable query functions:
