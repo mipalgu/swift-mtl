@@ -46,10 +46,19 @@ struct MTLRuntimeHandle: EcoreValue {
         self.reference = MTLRuntimeReference(runtime: runtime)
     }
 
+    /// Compares two handles by the identity of the reference they share.
+    ///
+    /// - Parameters:
+    ///   - lhs: The left-hand handle.
+    ///   - rhs: The right-hand handle.
+    /// - Returns: `true` if both share the same reference.
     static func == (lhs: MTLRuntimeHandle, rhs: MTLRuntimeHandle) -> Bool {
         lhs.reference === rhs.reference
     }
 
+    /// Hashes the identity of the shared reference.
+    ///
+    /// - Parameter hasher: The hasher to combine the identity into.
     func hash(into hasher: inout Hasher) {
         hasher.combine(ObjectIdentifier(reference))
     }

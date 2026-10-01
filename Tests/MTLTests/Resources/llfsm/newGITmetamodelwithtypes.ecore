@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" name="newGITmetamodelwithtypes" nsURI="http://www.example.org/newGITmetamodelwithtypes"
+    nsPrefix="newGITmetamodelwithtypes">
+  <eClassifiers xsi:type="ecore:EClass" name="Arrangement">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="arrangementName" lowerBound="1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="stateMachine" lowerBound="1"
+        upperBound="-1" eType="#//StateMachine" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="sensorVariables" lowerBound="1"
+        eType="#//ListOfIntegerVariables" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="booleanSensorVariables"
+        eType="#//ListOfBooleanVariables" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="setSensorVariables" eType="#//ListOfIntegerSetVariables"
+        containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="effectorVariables" eType="#//ListOfIntegerVariables"
+        containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="booleanEffectorVariables"
+        eType="#//ListOfBooleanVariables" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="setEffectorVariables" eType="#//ListOfIntegerSetVariables"
+        containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="whiteboardVariables" eType="#//ListOfIntegerVariables"
+        containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="booleanWhiteboardVariables"
+        eType="#//ListOfBooleanVariables" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="setWhiteboardVariables"
+        eType="#//ListOfIntegerSetVariables" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="integerConstantDefinitions"
+        eType="#//ListOfGlobalIntegerConstants" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="localIntegerMacroDefinitions"
+        eType="#//ListOfLocalIntegerMacros" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="scheduler" eType="#//SchedulerStateMachine"
+        containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="StateMachine">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="name" ordered="false" lowerBound="1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="initialState" lowerBound="1"
+        eType="#//InitialState" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="states" upperBound="-1"
+        eType="#//State" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="transitions" upperBound="-1"
+        eType="#//Transition" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="localVariables" eType="#//ListOfIntegerVariables"
+        containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="setLocalVariables" eType="#//ListOfIntegerSetVariables"
+        containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="booleanLocalVariables"
+        eType="#//ListOfBooleanVariables" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="copies" lowerBound="1"
+        eType="#//IntegerConstantForDefinition" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="probabilisticTransitions"
+        upperBound="-1" eType="#//ProbabilisticTransition" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="probabilistic" lowerBound="1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EBoolean" defaultValueLiteral="false"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="State">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="stateName" lowerBound="1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="onEntry" eType="#//OnEntrySection"
+        containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="onExit" eType="#//OnExitSection"
+        containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="internal" eType="#//InternalSection"
+        containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="InitialState" eSuperTypes="#//State"/>
+  <eClassifiers xsi:type="ecore:EClass" name="BooleanVariable">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="variableID" lowerBound="1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="IntegerVariable">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="variableID" lowerBound="1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="theUpperBound" lowerBound="1"
+        eType="#//IntegerConstantForDefinition" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="theLowerBound" eType="#//IntegerConstantForDefinition"
+        containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="IntegerSetVariable">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="variableID" lowerBound="1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="theLastID" lowerBound="1"
+        eType="#//IntegerConstantForDefinition" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="ListOfBooleanVariables">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="variables" upperBound="-1"
+        eType="#//BooleanVariable" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="ListOfIntegerVariables">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="variables" upperBound="-1"
+        eType="#//IntegerVariable" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="ListOfIntegerSetVariables">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="variables" upperBound="-1"
+        eType="#//IntegerSetVariable" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="BooleanExpression"/>
+  <eClassifiers xsi:type="ecore:EClass" name="SetExpression"/>
+  <eClassifiers xsi:type="ecore:EClass" name="Transition">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="booleanExpression" lowerBound="1"
+        eType="#//BooleanExpression" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="sourceState" lowerBound="1"
+        eType="#//State"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="targetState" lowerBound="1"
+        eType="#//State"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="Section">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="statements" lowerBound="1"
+        upperBound="-1" eType="#//Statement" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="Statement"/>
+  <eClassifiers xsi:type="ecore:EClass" name="OutputLine" eSuperTypes="#//Statement">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="theLine" lowerBound="1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="AssignmentIntegerLHS" eSuperTypes="#//Statement">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="variable" lowerBound="1"
+        eType="#//IntegerVariable"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="anArithmeticExpression"
+        lowerBound="1" eType="#//ArithmeticExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="AssigmentSetLHS" eSuperTypes="#//Statement">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="variable" lowerBound="1"
+        eType="#//IntegerSetVariable"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="aSetExpression" lowerBound="1"
+        eType="#//SetExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="AssignmentBooleanLHS" eSuperTypes="#//Statement">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="variable" lowerBound="1"
+        eType="#//BooleanVariable"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="aBooleanExpression" lowerBound="1"
+        eType="#//BooleanExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="AddSetExpression" eSuperTypes="#//SetExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="newElement" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="theSet" eType="#//SetExpression"
+        containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="InExpression" eSuperTypes="#//BooleanExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="theElement" eType="#//ArithmeticExpression"
+        containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="theSet" lowerBound="1"
+        eType="#//SetExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="BooleanVariableReference" eSuperTypes="#//SimpleBooleanExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="theVariable" lowerBound="1"
+        eType="#//BooleanVariable"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="SimpleBooleanExpression" eSuperTypes="#//BooleanExpression"/>
+  <eClassifiers xsi:type="ecore:EClass" name="BooleanConstant" eSuperTypes="#//SimpleBooleanExpression">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="aBooleanValue" lowerBound="1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="AndExpression" eSuperTypes="#//BooleanExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="leftExpression" lowerBound="1"
+        eType="#//BooleanExpression" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="rightExpression" lowerBound="1"
+        eType="#//BooleanExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="OrExpression" eSuperTypes="#//BooleanExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="leftExpression" lowerBound="1"
+        eType="#//BooleanExpression" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="rightExpression" lowerBound="1"
+        eType="#//BooleanExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="NotExpression" eSuperTypes="#//BooleanExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="theExpression" lowerBound="1"
+        eType="#//BooleanExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="ArithmeticExpression"/>
+  <eClassifiers xsi:type="ecore:EClass" name="SizeOfExpression" eSuperTypes="#//ArithmeticExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="theSet" eType="#//SetExpression"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="AdditionExpression" eSuperTypes="#//ArithmeticExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="leftExpression" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="rightExpression" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="MultiplicationExpression" eSuperTypes="#//ArithmeticExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="leftExpression" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="rightExpression" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="ModulusExpression" eSuperTypes="#//ArithmeticExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="leftExpression" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="rightExpression" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="SubtractionExpression" eSuperTypes="#//ArithmeticExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="leftExpression" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="rightExpression" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="LessThanExpression" eSuperTypes="#//BooleanExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="leftExpression" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="rightExpression" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="TimeExpression" eSuperTypes="#//BooleanExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="timeBound" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="IntegerVariableReference" eSuperTypes="#//SimpleIntegerExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="theVariable" lowerBound="1"
+        eType="#//IntegerVariable"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="SimpleIntegerExpression" eSuperTypes="#//ArithmeticExpression"/>
+  <eClassifiers xsi:type="ecore:EClass" name="IntegerConstant" eSuperTypes="#//IntegerConstantForDefinition">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="anIntegerValue" lowerBound="1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EInt"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="Conditional" eSuperTypes="#//ArithmeticExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="Condition" lowerBound="1"
+        eType="#//BooleanExpression" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="IfPart" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="ElsePart" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="EqualExpression" eSuperTypes="#//BooleanExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="leftExpression" lowerBound="1"
+        eType="#//ArithmeticExpression" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="rightExpression" eType="#//ArithmeticExpression"
+        containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="GlobalIntegerConstantDefinition">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="Identifier" lowerBound="1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="ListOfGlobalIntegerConstants">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="definitionsIntegerConstants"
+        upperBound="-1" eType="#//GlobalIntegerConstantDefinition" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="PredefinedIntegerConstant" eSuperTypes="#//IntegerConstantForDefinition">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="listedIntegerConstant"
+        lowerBound="1" eType="#//GlobalIntegerConstantDefinition"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="GlobalIntegerParameterDefinition" eSuperTypes="#//GlobalIntegerConstantDefinition">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="anIntegerValue" eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EInt"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="GlobalIntegerConstantMetaModelDefinition"
+      eSuperTypes="#//GlobalIntegerConstantDefinition">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="anIntegerValue" lowerBound="1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EInt"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="OnEntrySection" eSuperTypes="#//Section"/>
+  <eClassifiers xsi:type="ecore:EClass" name="OnExitSection" eSuperTypes="#//Section"/>
+  <eClassifiers xsi:type="ecore:EClass" name="InternalSection" eSuperTypes="#//Section"/>
+  <eClassifiers xsi:type="ecore:EClass" name="LocalIntegerMacroDefinition">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="identifier" lowerBound="1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EString" defaultValueLiteral="myTrun"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="ListOfLocalIntegerMacros">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="definitionsIntegerMacros"
+        eType="#//LocalIntegerMacroDefinition" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="PredefinedLocalIntegerMacro" eSuperTypes="#//SimpleIntegerExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="listedIntegerMacro" lowerBound="1"
+        eType="#//LocalIntegerMacroDefinition"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="IntegerConstantForDefinition" eSuperTypes="#//SimpleIntegerExpression"/>
+  <eClassifiers xsi:type="ecore:EClass" name="EmptySetConstant" eSuperTypes="#//SetExpression"/>
+  <eClassifiers xsi:type="ecore:EClass" name="SetDifference" eSuperTypes="#//SetExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="leftExpression" lowerBound="1"
+        eType="#//SetExpression" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="rightExpression" lowerBound="1"
+        eType="#//SetExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="SetUnion" eSuperTypes="#//SetExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="leftExpression" lowerBound="1"
+        eType="#//SetExpression" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="rightExpression" lowerBound="1"
+        eType="#//SetExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="IsSetEmpty" eSuperTypes="#//BooleanExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="theSet" lowerBound="1"
+        eType="#//SetExpression" containment="true"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="SetVariableReference" eSuperTypes="#//SetExpression">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="theVariable" lowerBound="1"
+        eType="#//IntegerSetVariable"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="ProbabilisticTransition">
+    <eStructuralFeatures xsi:type="ecore:EAttribute" name="probability" lowerBound="1"
+        eType="ecore:EDataType http://www.eclipse.org/emf/2002/Ecore#//EInt"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="sourceState" lowerBound="1"
+        eType="#//State"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="targetState" lowerBound="1"
+        eType="#//State"/>
+  </eClassifiers>
+  <eClassifiers xsi:type="ecore:EClass" name="SchedulerStateMachine" eSuperTypes="#//StateMachine">
+    <eStructuralFeatures xsi:type="ecore:EReference" name="s_turn" lowerBound="1"
+        eType="#//IntegerVariable" containment="true"/>
+    <eStructuralFeatures xsi:type="ecore:EReference" name="is_ringlet_complete" lowerBound="1"
+        eType="#//BooleanVariable" containment="true"/>
+  </eClassifiers>
+</ecore:EPackage>

@@ -6,6 +6,8 @@
 //  Copyright (c) 2026 Rene Hexel. All rights reserved.
 //
 
+import ECore
+import EMFBase
 import Foundation
 import Testing
 
@@ -147,5 +149,50 @@ struct MTLConformanceTests {
             let module = try await MTLParser().parseWithoutLinking(file)
             #expect(module.templates["main"] != nil, "\(file.lastPathComponent) has no main template")
         }
+    }
+}
+
+@Suite("MTL LLFSM Regression")
+struct MTLLLFSMRegressionTests {
+
+    /// The generated file extension for each LLFSM template.
+    private static let templates: [(template: String, fileExtension: String)] = [
+        ("llfsm2c", "c"), ("llfsm2dot", "dot"), ("llfsm2lisp", "lisp"), ("llfsm2mips", "asm"),
+        ("llfsm2nusmv", "smv"), ("llfsm2prism", "pm"), ("llfsm2tla", "tla"), ("llfsm2uppaal", "xml")
+    ]
+
+    private static let modelName = "PingPongTikiTakaForC"
+
+    /// The lines of a text that contain anything other than white space.
+    private static func significantLines(_ text: String) -> [String] {
+        text.split(separator: "\n", omittingEmptySubsequences: true)
+            .map(String.init)
+            .filter { !$0.allSatisfy(\.isWhitespace) }
+    }
+
+    @Test("The LLFSM templates generate the recorded output apart from blank lines", arguments: templates.map(\.template))
+    @MainActor
+    func generatesRecordedOutput(template: String) async throws {
+        let fileExtension = try #require(Self.templates.first { $0.template == template }?.fileExtension)
+
+        let resourceSet = ResourceSet()
+        let package = try await EPackage(url: MTLTestSupport.resource("llfsm/newGITmetamodelwithtypes.ecore"))
+        await resourceSet.registerMetamodel(package, uri: package.nsURI)
+        let resource = try await XMIParser(resourceSet: resourceSet)
+            .parse(MTLTestSupport.resource("llfsm/\(Self.modelName).xmi"))
+        let roots = await resource.getRootObjects().map { Optional($0) }
+
+        let module = try await MTLParser().parse(MTLTestSupport.resource("conformance/\(template).mtl"))
+        let strategy = MTLInMemoryStrategy()
+        let generator = MTLGenerator(module: module, generationStrategy: strategy)
+        try await generator.generate(mainTemplate: "main", arguments: roots, models: [Self.modelName: resource])
+
+        let files = await strategy.getGeneratedFiles()
+        let generated = try #require(files["\(Self.modelName).\(fileExtension)"])
+        let recorded = try String(
+            contentsOf: MTLTestSupport.resource("llfsm/\(Self.modelName).\(fileExtension)"), encoding: .utf8)
+
+        #expect(Self.significantLines(generated) == Self.significantLines(recorded))
+        #expect(generated.hasPrefix("\n") == false, "block tag lines must not leave a leading blank line")
     }
 }
