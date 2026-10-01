@@ -332,8 +332,14 @@ private actor MTLLexer {
                 case "n": string.append("\n")
                 case "t": string.append("\t")
                 case "r": string.append("\r")
+                case "b": string.append("\u{08}")
+                case "f": string.append("\u{0C}")
                 case "\\": string.append("\\")
                 case "'": string.append("'")
+                case "\"": string.append("\"")
+                case "u":
+                    string.append(try unicodeEscape(line: tokenLine, column: tokenColumn))
+                    continue
                 default: string.append(escaped)
                 }
                 advance()
@@ -344,6 +350,48 @@ private actor MTLLexer {
         }
 
         throw parseError("Unterminated string literal", line: tokenLine, column: tokenColumn)
+    }
+
+    /// Reads the code unit(s) of a `\uXXXX` escape, with the cursor on the `u`.
+    ///
+    /// A high surrogate followed by an escaped low surrogate combines into one character; an
+    /// unpaired surrogate becomes the replacement character. On return the cursor is after the
+    /// last hexadecimal digit consumed.
+    ///
+    /// - Parameters:
+    ///   - line: The line on which the enclosing string starts.
+    ///   - column: The column at which the enclosing string starts.
+    /// - Returns: The character the escape denotes.
+    /// - Throws: A parse error when fewer than four hexadecimal digits follow.
+    private func unicodeEscape(line: Int, column: Int) throws -> Character {
+        func codeUnit() throws -> UInt32 {
+            advance()  // the 'u'
+            var value: UInt32 = 0
+            for _ in 0..<4 {
+                guard position < input.endIndex, let digit = input[position].hexDigitValue else {
+                    throw parseError("Malformed unicode escape in string literal", line: line, column: column)
+                }
+                value = value * 16 + UInt32(digit)
+                advance()
+            }
+            return value
+        }
+        let first = try codeUnit()
+        if (0xD800...0xDBFF).contains(first), position < input.endIndex, input[position] == "\\" {
+            let resume = (position, self.line, self.column)
+            advance()
+            if position < input.endIndex, input[position] == "u" {
+                let second = try codeUnit()
+                if (0xDC00...0xDFFF).contains(second),
+                    let scalar = Unicode.Scalar(0x10000 + ((first - 0xD800) << 10) + (second - 0xDC00))
+                {
+                    return Character(scalar)
+                }
+            }
+            (position, self.line, self.column) = resume
+            return "\u{FFFD}"
+        }
+        return Unicode.Scalar(first).map(Character.init) ?? "\u{FFFD}"
     }
 
     private func tokenizeNumber(_ tokens: inout [MTLToken]) throws {
@@ -971,7 +1019,7 @@ private actor MTLSyntaxParser {
             advance()
             let expr = try parseExpression()
             try expect(.rightBracket)
-            return MTLExpressionStatement(expression: expr)
+            return MTLExpressionStatement(expression: expr, followedByLineBreak: nextTextStartsWithLineBreak())
 
         default:
             if let invocation = try parseMacroInvocationWithBody() {
@@ -992,7 +1040,15 @@ private actor MTLSyntaxParser {
         }
 
         try expect(.rightBracket)
-        return MTLExpressionStatement(expression: expr)
+        return MTLExpressionStatement(expression: expr, followedByLineBreak: nextTextStartsWithLineBreak())
+    }
+
+    /// Whether the next token is text that begins with a line break.
+    private func nextTextStartsWithLineBreak() -> Bool {
+        if case .text(let text) = current()?.type, let first = text.first {
+            return first.isNewline
+        }
+        return false
     }
 
     // MARK: - Expression Parsing

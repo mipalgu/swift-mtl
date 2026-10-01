@@ -66,7 +66,7 @@ vars == <<[for (sm : StateMachine in arr.stateMachine) separator(', ')][sm.name/
 (* Type invariants                                                         *)
 (***************************************************************************)
 [for (sm : StateMachine in arr.stateMachine)]
-[let machineIdx : Integer = arr.stateMachine->indexOf(sm)]
+[let machineIdx : Integer = arr.stateMachine->indexOf(sm) - 1]
 Types[sm.name/]OK == [sm.name/]State \in {"__[sm.name/]", "[sm.initialState.stateName/]"[for (s : State in sm.states)], "[s.stateName/]"[/for]}
 [/let]
 [/for]
@@ -117,7 +117,7 @@ TypesSeqTurnOK == sequentialTurn \in (0..[arr.stateMachine->size()/])
 (* Transitions                                                             *)
 (***************************************************************************)
 [for (sm : StateMachine in arr.stateMachine)]
-[let machineID : Integer = arr.stateMachine->indexOf(sm)]
+[let machineID : Integer = arr.stateMachine->indexOf(sm) - 1]
 (***************************************************************************)
 (* Transitions of machine [sm.name/]                                       *)
 (***************************************************************************)
@@ -175,7 +175,7 @@ T[machineID/]0 == /\ sequentialTurn = [machineID/]
 [/if]
 
 [for (tr : Transition in sm.transitions)]
-[let transitionID : Integer = sm.transitions->indexOf(tr) + 1]
+[let transitionID : Integer = sm.transitions->indexOf(tr) - 1 + 1]
 T[machineID/][transitionID/] == /\ sequentialTurn = [machineID/]
     /\ [sm.name/]State = "[tr.sourceState.stateName/]"
 [if (tr.booleanExpression.oclIsKindOf(BooleanConstant))]
@@ -200,7 +200,7 @@ T[machineID/][transitionID/] == /\ sequentialTurn = [machineID/]
 [/if]
     /\ [sm.name/]State' = "[tr.targetState.stateName/]"
 [for (earlier : Transition in sm.transitions)]
-[let earlierID : Integer = sm.transitions->indexOf(earlier) + 1]
+[let earlierID : Integer = sm.transitions->indexOf(earlier) - 1 + 1]
 [if (earlier.sourceState.stateName = tr.sourceState.stateName and earlierID < transitionID)]
 [if (not earlier.booleanExpression.oclIsKindOf(BooleanConstant))]
 [if (earlier.booleanExpression.oclIsKindOf(BooleanVariableReference))]
@@ -310,13 +310,13 @@ T[machineID/]Default == /\ sequentialTurn = [machineID/]
 (*************************************************************************)
     sequentialTurn' = (sequentialTurn + 1) % [arr.stateMachine->size()/] /\
 [for (sm : StateMachine in arr.stateMachine)]
-[let machineID : Integer = arr.stateMachine->indexOf(sm)]
+[let machineID : Integer = arr.stateMachine->indexOf(sm) - 1]
 (*************************************************************************)
 (* The transitions of machine [sm.name/]                                 *)
 (*************************************************************************)
     \/ T[machineID/]0
 [for (tr : Transition in sm.transitions)]
-[let transitionID : Integer = sm.transitions->indexOf(tr) + 1]
+[let transitionID : Integer = sm.transitions->indexOf(tr) - 1 + 1]
     \/ T[machineID/][transitionID/]
 [/let]
 [/for]

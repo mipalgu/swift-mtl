@@ -424,3 +424,72 @@ func generateToDirectory(
     let generator = MTLGenerator(module: module, generationStrategy: fileStrategy)
     try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
 }
+
+@Suite("MTL Standard Output")
+struct MTLStandardOutputTests {
+    private static let source = """
+        [module Test('http://example.com')]
+        [template main()]
+        before
+        [file ('A.txt', 'overwrite', 'UTF-8')]in file[/file]
+        after
+        [/template]
+        """
+
+    @MainActor
+    private func run(_ strategy: MTLFileSystemStrategy) async throws {
+        let generator = MTLGenerator(
+            module: try await MTLParser().parse(Self.source), generationStrategy: strategy)
+        try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
+    }
+
+    @Test("Text outside file blocks is discarded by default and never written to a file")
+    @MainActor
+    func discardedByDefault() async throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let strategy = MTLFileSystemStrategy(basePath: directory.path)
+        try await run(strategy)
+        #expect(FileManager.default.fileExists(atPath: directory.file("A.txt")))
+        #expect(!FileManager.default.fileExists(atPath: directory.file(MTLStandardOutput.fileName)))
+        #expect(await strategy.standardOutput == nil)
+    }
+
+    @Test("Text outside file blocks can be captured")
+    @MainActor
+    func captured() async throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let strategy = MTLFileSystemStrategy(basePath: directory.path, standardOutput: .capture)
+        try await run(strategy)
+        let text = try #require(await strategy.standardOutput)
+        #expect(text.contains("before"))
+        #expect(text.contains("after"))
+        #expect(!text.contains("in file"))
+        #expect(!FileManager.default.fileExists(atPath: directory.file(MTLStandardOutput.fileName)))
+    }
+
+    @Test("Text outside file blocks can be passed to a handler")
+    @MainActor
+    func handled() async throws {
+        actor Box {
+            var text: String?
+            func set(_ value: String) { text = value }
+        }
+        let box = Box()
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let strategy = MTLFileSystemStrategy(
+            basePath: directory.path, standardOutput: .handler { await box.set($0) })
+        try await run(strategy)
+        let text = try #require(await box.text)
+        #expect(text.contains("before"))
+    }
+
+    @Test("In-memory strategies keep the text under the standard output name")
+    @MainActor
+    func inMemory() async throws {
+        let files = try await generateFiles(Self.source)
+        #expect(files[MTLStandardOutput.fileName]?.contains("before") == true)
+    }
+}

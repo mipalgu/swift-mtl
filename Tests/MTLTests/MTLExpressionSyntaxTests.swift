@@ -268,4 +268,23 @@ struct MTLExpressionSyntaxTests {
         #expect(try await Self.evaluate("'it\\'s'") == "it's")
         #expect(try await Self.evaluate("'tab\\there'") == "tab\there")
     }
+
+    @Test("Strings accept the full set of escape sequences")
+    @MainActor
+    func fullEscapes() async throws {
+        #expect(try await Self.evaluate("'a\\u0041b'") == "aAb")
+        #expect(try await Self.evaluate("'\\u00e9'") == "\u{E9}")
+        #expect(try await Self.evaluate("'\\ud83d\\ude00'") == "\u{1F600}")
+        #expect(try await Self.evaluate("'x\\ny\\rz'") == "x\ny\rz")
+        #expect(try await Self.evaluate("'\\b\\f'") == "\u{08}\u{0C}")
+        #expect(try await Self.evaluate("'back\\\\slash'") == "back\\slash")
+        #expect(try await Self.evaluate("'say \\\"hi\\\"'") == "say \"hi\"")
+    }
+
+    @Test("A malformed unicode escape is a parse error")
+    func malformedUnicodeEscape() async throws {
+        await #expect(throws: (any Error).self) {
+            _ = try await MTLTestSupport.parse("[module m('u')/][template main()]['\\u12G4'/][/template]")
+        }
+    }
 }

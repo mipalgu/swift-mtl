@@ -158,7 +158,7 @@ struct MTLInvocationSyntaxTests {
             }
             [/template]
             """)
-        #expect(output == "{\n    first\n    second\n\n}\n")
+        #expect(output == "{\n    first\n    second\n}\n")
     }
 
     @Test("A guarded-out template invoked as an expression yields no text")

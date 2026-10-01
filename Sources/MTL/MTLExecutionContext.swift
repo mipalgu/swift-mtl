@@ -143,6 +143,9 @@ public final class MTLExecutionContext: Sendable {
     /// entry that is removed when the file closes.
     private var deferredStates: [MTLDeferredState] = [MTLDeferredState()]
 
+    /// Whether the line break that starts the next text statement is to be dropped.
+    private var absorbsNextLineBreak = false
+
     /// Whether emit blocks are currently being rendered.
     private var isRenderingDeferred = false
 
@@ -423,6 +426,29 @@ public final class MTLExecutionContext: Sendable {
         await currentWriter.writeLine(text, indent: indent)
     }
 
+    /// Records whether the next text statement drops the line break it starts with.
+    ///
+    /// - Parameter absorbs: `true` to drop that line break
+    func absorbNextLineBreak(_ absorbs: Bool) {
+        absorbsNextLineBreak = absorbs
+    }
+
+    /// Reports and clears a pending line break absorption.
+    ///
+    /// - Returns: `true` if the text statement being executed drops a leading line break
+    func takeLineBreakAbsorption() -> Bool {
+        defer { absorbsNextLineBreak = false }
+        return absorbsNextLineBreak
+    }
+
+    /// Whether the current output has text on its last line.
+    var isMidLine: Bool {
+        get async {
+            guard let text = await writerStack.last?.getContent() else { return false }
+            return !(text.isEmpty || text.last?.isNewline == true)
+        }
+    }
+
     // MARK: - File Management
 
     /// Opens a new file for output, pushing a new writer onto the stack.
@@ -549,7 +575,7 @@ public final class MTLExecutionContext: Sendable {
     /// Mirrors a collected set into a hidden variable that `collected(...)` reads.
     private func mirrorCollectedSet(_ name: String) {
         let values: [any EcoreValue] = deferredStates.last?.sets[name].map { Array($0) } ?? []
-        aqlContext.setVariable(
+        aqlContext.setGlobalVariable(
             MTLDeferredBlockNames.collectedVariablePrefix + name, value: EcoreValueArray(values))
     }
 
@@ -558,13 +584,13 @@ public final class MTLExecutionContext: Sendable {
         from old: MTLDeferredState?, to new: MTLDeferredState?
     ) {
         for name in old?.sets.keys ?? [] {
-            aqlContext.setVariable(
+            aqlContext.setGlobalVariable(
                 MTLDeferredBlockNames.collectedVariablePrefix + name,
                 value: EcoreValueArray([]))
         }
         for (name, set) in new?.sets ?? [:] {
             let values: [any EcoreValue] = Array(set)
-            aqlContext.setVariable(
+            aqlContext.setGlobalVariable(
                 MTLDeferredBlockNames.collectedVariablePrefix + name,
                 value: EcoreValueArray(values))
         }
@@ -824,22 +850,9 @@ public final class MTLExecutionContext: Sendable {
             deferredStates[0].emits = [:]
         }
 
-        // Save the main writer's content to stdout
+        // Hand the text written outside any file block to the strategy
         if let mainWriter = writerStack.first {
-            // For in-memory strategy, create and finalize a writer for stdout
-            let stdoutWriter = try await generationStrategy.createWriter(
-                url: "stdout",
-                mode: .overwrite,
-                charset: "UTF-8",
-                indentation: MTLIndentation() // Start with zero indentation
-            )
-
-            // Copy content from main writer to stdout writer
-            let content = await mainWriter.getContent()
-            await stdoutWriter.write(content, indent: false)
-
-            // Finalize stdout writer to save content
-            try await generationStrategy.finalizeWriter(stdoutWriter)
+            try await generationStrategy.writeStandardOutput(await mainWriter.getContent())
         }
     }
 

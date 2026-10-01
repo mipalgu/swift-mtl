@@ -23,7 +23,7 @@
 (defconstant +[sm.name/]-DINIT+ 0)
 (defconstant +[sm.name/]-[sm.initialState.stateName/]+ 1)
 [for (s : State in sm.states)]
-(defconstant +[sm.name/]-[s.stateName/]+ [sm.states->indexOf(s) + 2/])
+(defconstant +[sm.name/]-[s.stateName/]+ [sm.states->indexOf(s) - 1 + 2/])
 [/for]
 (defparameter *[sm.name/]-state-names*
   (vector "dInit[sm.name/]" "[sm.initialState.stateName/]"[for (s : State in sm.states)] "[s.stateName/]"[/for]))
@@ -147,7 +147,7 @@
       (format t "Step ~D (turn=~D):~%" i turn)
       (case turn
 [for (sm : StateMachine in arr.stateMachine)]
-[let machineIdx : Integer = arr.stateMachine->indexOf(sm)]
+[let machineIdx : Integer = arr.stateMachine->indexOf(sm) - 1]
         ([machineIdx/] (step-[sm.name/]))
 [/let]
 [/for]

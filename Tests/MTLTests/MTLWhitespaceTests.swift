@@ -238,4 +238,52 @@ struct MTLWhitespaceTests {
         let area = try #require(module.templates["main"]?.body.statements.first as? MTLProtectedArea)
         #expect(area.startTagPrefix != nil)
     }
+
+    @Test("A line break after an expression is not duplicated when the result ends with one")
+    @MainActor
+    func expressionLineBreakNotDuplicated() async throws {
+        let output = try await MTLTestSupport.output("""
+            [module m('u')/]
+            [template main()]
+            first
+            [item('a')/]
+            [item('b')/]
+            last
+            [/template]
+            [template item(name : String)]
+            item [name/]
+            [/template]
+            """)
+        #expect(output == "first\nitem a\nitem b\nlast\n")
+    }
+
+    @Test("A line break after an expression is kept when the result lacks one")
+    @MainActor
+    func expressionLineBreakKept() async throws {
+        let output = try await MTLTestSupport.output("""
+            [module m('u')/]
+            [template main()]
+            a: [1 + 1/]
+            b: [item('x')/] end
+            [/template]
+            [template item(name : String)][name/][/template]
+            """)
+        #expect(output == "a: 2\nb: x end\n")
+    }
+
+    @Test("An expression with no result alone on its line produces no line")
+    @MainActor
+    func emptyExpressionLine() async throws {
+        let output = try await MTLTestSupport.output("""
+            [module m('u')/]
+            [template main()]
+            before
+            [nothing()/]
+            after [nothing()/]
+            end
+            [/template]
+            [template nothing()][/template]
+            """)
+        #expect(output == "before\nafter \nend\n")
+    }
 }
