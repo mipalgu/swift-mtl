@@ -1,269 +1,197 @@
 # Getting Started with MTL
 
-Learn how to add MTL to your project and create your first code generator.
+Write a template, parse it, and generate text in memory or into files.
 
 ## Overview
 
-This guide walks you through adding MTL to your Swift project and demonstrates
-how to write templates that generate code from models.
+This tutorial builds a small generator step by step. Every template shown here follows the
+syntax covered by the package's tests. Add the `MTL` product to your target, and import
+`MTL` (plus `ECore` and `EMFBase` when you pass model objects to a template).
 
-## Adding MTL to Your Project
+### Write a template
 
-Add swift-mtl as a dependency in your `Package.swift`:
-
-```swift
-dependencies: [
-    .package(url: "https://github.com/mipalgu/swift-mtl.git", branch: "main"),
-]
-```
-
-Then add the product dependency to your target:
-
-```swift
-.target(
-    name: "MyApp",
-    dependencies: [
-        .product(name: "MTL", package: "swift-mtl"),
-    ]
-)
-```
-
-## Writing an MTL Template
-
-MTL templates are written in `.mtl` files. Here's a simple example that generates
-Swift classes from a model:
+A module starts with a header naming the module and the metamodels it uses by namespace
+URI. At least one URI is required. Everything between `[template ...]` and
+`[/template]` is the body.
 
 ```mtl
 [comment encoding = UTF-8 /]
-[module generateSwift('http://example.com/mymetamodel')]
+[module hello('http://www.eclipse.org/emf/2002/Ecore')/]
 
-[template public generateClass(c : Class)]
-[file (c.name.concat('.swift'), false, 'UTF-8')]
-//
-// [c.name/].swift
-// Generated - do not edit
-//
-
-import Foundation
-
-class [c.name/] {
-    [for (attr : Attribute | c.attributes)]
-    var [attr.name/]: [attr.type.swiftType()/]
-    [/for]
-
-    init() {
-        [for (attr : Attribute | c.attributes)]
-        self.[attr.name/] = [attr.defaultValue()/]
-        [/for]
-    }
-}
-[/file]
-[/template]
-
-[query public swiftType(t : Type) : String =
-    if t.name = 'String' then 'String'
-    else if t.name = 'Integer' then 'Int'
-    else if t.name = 'Boolean' then 'Bool'
-    else 'Any'
-    endif endif endif
-/]
-
-[query public defaultValue(a : Attribute) : String =
-    if a.type.name = 'String' then '""'
-    else if a.type.name = 'Integer' then '0'
-    else if a.type.name = 'Boolean' then 'false'
-    else 'nil'
-    endif endif endif
-/]
-```
-
-### Module Declaration
-
-The `[module]` tag declares the template module and its required metamodel:
-
-```mtl
-[module generateSwift('http://example.com/mymetamodel')]
-```
-
-### Templates
-
-Templates are the entry points for generation. They take model elements as parameters:
-
-```mtl
-[template public generateClass(c : Class)]
-...
+[template public main(name : String)]
+Hello, [name/]!
+[for (n | Sequence{1, 2, 3}) separator(', ') before('Counting: ') after('.')][n/][/for]
 [/template]
 ```
 
-### File Blocks
+A line that holds only block tags (such as `[for ...]` or `[/template]`) and white space
+produces no output. Lines with text or an expression tag keep their line break. The
+template above therefore produces `Hello, World!` followed by a line break, then
+`Counting: 1, 2, 3.` and a line break when called with `'World'`.
 
-File blocks create output files:
+### Parse a module
 
-```mtl
-[file (filename, appendMode, encoding)]
-... content ...
-[/file]
-```
-
-## Loading and Executing Templates
-
-### Parse the Template
+``MTLParser`` is an actor. Use ``MTLParser/parse(_:filename:)`` for source text, or
+``MTLParser/parse(_:)`` for a file, which also links the imports and parent module.
 
 ```swift
 import MTL
 
+let source = """
+    [module hello('http://www.eclipse.org/emf/2002/Ecore')/]
+    [template public main(name : String)]
+    Hello, [name/]!
+    [/template]
+    """
+
 let parser = MTLParser()
-let module = try await parser.parse(URL(fileURLWithPath: "SwiftGenerator.mtl"))
-
-print("Loaded module: \(module.name)")
-print("Templates: \(module.templates.count)")
+let module = try await parser.parse(source, filename: "hello.mtl")
+print(module.name)  // hello
 ```
 
-### Load Your Model
+The parsed ``MTLModule`` exposes its ``MTLModule/templates``, ``MTLModule/queries``,
+``MTLModule/macros`` and ``MTLModule/metamodelURIs``. Use
+``MTLModule/binding(to:)`` to bind the declared URIs to loaded `EPackage` values, and
+``MTLModule/unboundMetamodelURIs`` to see which ones are still unbound.
+
+### Generate in memory
+
+Create an ``MTLInMemoryStrategy``, hand it to an ``MTLGenerator`` and run the main
+template. The main output is stored under the file name `stdout`.
 
 ```swift
-import ECore
+let strategy = MTLInMemoryStrategy()
+let generator = MTLGenerator(module: module, generationStrategy: strategy)
 
-let xmiParser = XMIParser()
-let modelResource = try await xmiParser.parse(URL(fileURLWithPath: "my-model.xmi"))
-```
-
-### Configure the Generation Strategy
-
-MTL supports different output strategies:
-
-```swift
-// Generate to files
-let fileStrategy = MTLFileGenerationStrategy(
-    outputDirectory: URL(fileURLWithPath: "./generated")
+try await generator.generate(
+    mainTemplate: "main",
+    arguments: ["World"],
+    models: [:]
 )
 
-// Or capture to strings (useful for testing)
-let stringStrategy = MTLStringGenerationStrategy()
+let files = await strategy.getGeneratedFiles()
+print(files["stdout"] ?? "")  // Hello, World!
 ```
 
-### Create the Execution Context
+The `arguments` array holds the values for the template parameters in order. Pass model
+objects (for example the root of an input model) as arguments, and register whole
+models in `models` by alias such as `"IN"`. If several templates share the main
+template's name, the one whose parameter count matches the arguments is used.
+``MTLGenerator/statistics`` reports counts and timing after a run.
 
-```swift
-let context = MTLExecutionContext(
-    module: module,
-    generationStrategy: fileStrategy
-)
+### Generate to files
 
-// Register your model
-try await context.registerModel(modelResource, as: "model")
-```
-
-### Execute the Template
-
-```swift
-let executor = MTLExecutor(context: context)
-try await executor.execute()
-
-// Check what was generated
-print("Files generated: \(fileStrategy.generatedFiles.count)")
-```
-
-## Using Protected Regions
-
-Protected regions preserve user code across regeneration:
+A `[file (...)]` block redirects its content into a named file. Use
+``MTLFileSystemStrategy`` to write those files below a base directory.
 
 ```mtl
-[template public generateClass(c : Class)]
-[file (c.name.concat('.swift'), false, 'UTF-8')]
-class [c.name/] {
-    // Generated properties
-    [for (attr : Attribute | c.attributes)]
-    var [attr.name/]: [attr.type.swiftType()/]
-    [/for]
-
-    [protected ('custom-properties')]
-    // Add your custom properties here
-    [/protected]
-
-    init() {
-        [protected ('custom-init')]
-        // Add custom initialisation here
-        [/protected]
-    }
-}
+[module files('http://www.eclipse.org/emf/2002/Ecore')/]
+[template public main()]
+[for (n | Sequence{'a', 'b'})]
+[file (n + '.txt', false)]
+This is file [n/].
 [/file]
+[/for]
 [/template]
 ```
-
-When the template runs again, content within `[protected]...[/protected]` blocks
-is preserved from the existing file.
-
-### Scanning for Protected Regions
-
-Before regenerating, scan existing files:
 
 ```swift
-// Scan existing file for protected regions
-try await context.scanFileForProtectedAreas("./generated/MyClass.swift")
-
-// Now execute - protected content will be preserved
-try await executor.execute()
+let strategy = MTLFileSystemStrategy(basePath: "output")
+let generator = MTLGenerator(module: module, generationStrategy: strategy)
+try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
 ```
 
-## Using Queries
+The second argument of `file` is the mode. `false` overwrites, `true` appends, and
+`'overwrite'`, `'append'` and `'create'` (which fails if the file exists) are also
+accepted, as are the bare keywords `overwrite`, `append` and `create`. An optional third
+argument names the charset. It is recorded and passed to the strategy, but the bundled
+writers always write UTF-8. With ``MTLInMemoryStrategy`` the same blocks end up in the
+dictionary returned by ``MTLInMemoryStrategy/getGeneratedFiles()``, keyed by file name.
 
-Queries are reusable expressions:
+### Queries, templates and macros
 
-```mtl
-[query public fullName(c : Class) : String =
-    c.package.name.concat('.').concat(c.name)
-/]
-
-[query public abstractClasses(p : Package) : Sequence(Class) =
-    p.classes->select(c | c.isAbstract)
-/]
-```
-
-Use queries in templates:
+A query is a named expression. A template produces text. A macro is like a template, but
+its last parameter may be of type `Body` and receives the text between the call's tags.
 
 ```mtl
-[template public generate(p : Package)]
-Package: [p.fullName()/]
-Abstract classes: [p.abstractClasses()->size()/]
+[module helpers('http://www.eclipse.org/emf/2002/Ecore')/]
+
+[query public twice(n : Integer) : Integer = n * 2/]
+
+[macro bracketed(open : String, content : Body)][open/][content/][']'/][/macro]
+
+[template public item(label : String)]<[label/]>[/template]
+
+[template public main()]
+[twice(4)/]
+[item('x')/]
+[bracketed('[')]inner[/bracketed]
+[Sequence{'a', 'b'}.item()/]
 [/template]
 ```
 
-## Conditional Generation
+Calling `[name(args)/]` finds queries, templates and macros by name. `[x.name(a)/]`
+passes the receiver as the first argument. A template called on a collection runs once
+per element, and the texts are concatenated. Write `['['/]` and `[']'/]` to produce
+literal brackets. Overloads with the same name but different parameter types are
+allowed and chosen by argument type.
 
-Use `[if]` blocks for conditional content:
+### Imports and search paths
+
+Use `[import qualified::module::name/]` to use another module. A module that begins
+`[module derived('uri') extends base/]` inherits from `base`. Qualified names map to
+files: `common::naming` is the file `common/naming.mtl`.
 
 ```mtl
-[template public generateClass(c : Class)]
-[if (c.isAbstract)]
-abstract class [c.name/] {
-[else]
-class [c.name/] {
-[/if]
-    ...
+[module app('http://www.eclipse.org/emf/2002/Ecore')/]
+[import vendor::shared/]
+[template public main()][shared()/][/template]
+```
+
+``MTLParser/parse(_:)`` looks in the importing file's directory first, then in each of
+the parser's search paths in order.
+
+```swift
+let libraries = URL(fileURLWithPath: "libraries")
+let parser = MTLParser(searchPaths: [libraries])
+let module = try await parser.parse(URL(fileURLWithPath: "app.mtl"))
+```
+
+For modules parsed from source text, call ``MTLParser/link(_:relativeTo:)`` to attach
+their imports afterwards. ``MTLModuleResolver`` and ``MTLModuleLoader`` offer the same
+resolution on their own, for example
+``MTLModuleResolver/candidates(for:relativeTo:)`` to see which files are tried.
+
+### Handle errors
+
+Each stage throws its own error type.
+
+```swift
+do {
+    let module = try await parser.parse(URL(fileURLWithPath: "app.mtl"))
+    try await generator(for: module).generate(
+        mainTemplate: "main", arguments: [], models: [:])
+} catch let error as MTLModuleResolutionError {
+    // A missing module lists every location that was searched.
+    print(error.localizedDescription)
+} catch let error as MTLParseError {
+    print("Syntax problem: \(error.localizedDescription)")
+} catch let error as MTLExecutionError {
+    print("Generation failed: \(error.localizedDescription)")
 }
-[/template]
 ```
 
-## Iteration
+(Here `generator(for:)` stands for your own helper that builds an ``MTLGenerator``.)
 
-Use `[for]` blocks to iterate over collections:
+- ``MTLModuleResolutionError`` reports a missing module (`notFound`, with the paths
+  searched and the requiring module) or an import cycle (`cycle`).
+- ``MTLParseError`` reports invalid syntax, such as a `for` without `in` or `|`, or an
+  unknown file mode string.
+- ``MTLExecutionError`` reports runtime problems: a template that cannot be found, a
+  failed guard or post-condition, a type error, or a file that already exists in
+  `create` mode.
 
-```mtl
-[for (attr : Attribute | c.attributes)]
-var [attr.name/]: [attr.type.name/]
-[/for]
+### Next steps
 
-[for (attr : Attribute | c.attributes) separator(', ')]
-[attr.name/]
-[/for]
-```
-
-The `separator` option adds text between iterations (but not after the last one).
-
-## Next Steps
-
-- <doc:UnderstandingMTL> - Deep dive into MTL concepts
-- ``MTLTemplate`` - Template API reference
-- ``MTLProtectedAreaManager`` - Protected region management
-- ``MTLExecutionContext`` - Advanced execution control
+Read <doc:UnderstandingMTL> for how invocations are resolved, how whitespace is handled
+and which parts of the Acceleo standard library are not available yet.

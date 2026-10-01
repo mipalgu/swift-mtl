@@ -1,53 +1,38 @@
 # ``MTL``
 
-@Metadata {
-    @DisplayName("MTL")
-}
-
-A pure Swift implementation of the [OMG MOFM2T (MOF Model-to-Text Transformation)](https://www.omg.org/spec/MOFM2T/) standard for template-based code generation.
+Parse OMG MOFM2T (Acceleo style) templates and generate text from models.
 
 ## Overview
 
-MTL provides a template-based approach to code generation from models. Define templates
-with embedded queries that navigate your model, and MTL generates output files with
-the evaluated content.
+MTL is a Swift implementation of the [OMG MOFM2T](https://www.omg.org/spec/MOFM2T/)
+model-to-text language, using the Acceleo dialect of the syntax. A template module is
+plain text with bracketed tags. Tags navigate a model, loop, branch and call other
+templates, and everything between the tags is copied to the output.
 
-This implementation follows the [OMG MOFM2T specification](https://www.omg.org/spec/MOFM2T/)
-and is compatible with [Eclipse Acceleo](https://eclipse.dev/acceleo/), whilst providing
-a modern Swift API for integration with the ECore metamodelling framework.
-
-### Key Features
-
-- **Template-based generation**: Define output structure with text and queries
-- **AQL integration**: Use Acceleo Query Language for model navigation
-- **File blocks**: Control which files are generated and where
-- **Protected regions**: Preserve user modifications across regeneration
-- **Iteration**: Loop over collections with for blocks
-- **Conditionals**: Include content based on conditions
-
-### Quick Example
-
-```swift
-import MTL
-import ECore
-
-// Parse the template module
-let parser = MTLParser()
-let module = try await parser.parse(URL(fileURLWithPath: "SwiftGenerator.mtl"))
-
-// Configure output
-let strategy = MTLFileGenerationStrategy(
-    outputDirectory: URL(fileURLWithPath: "./Sources/Generated")
-)
-
-// Create context and register model
-let context = MTLExecutionContext(module: module, generationStrategy: strategy)
-try await context.registerModel(modelResource, as: "model")
-
-// Execute
-let executor = MTLExecutor(context: context)
-try await executor.execute()
+```mtl
+[module greetings('http://www.eclipse.org/emf/2002/Ecore')/]
+[template public main(name : String)]
+Hello, [name/]!
+[/template]
 ```
+
+Expressions inside tags are swift-aql abstract syntax trees built by ``MTLParser`` and
+evaluated against models loaded with swift-ecore. The package provides a single library
+product, `MTL`. It has no executable: the `swift-mtl` command-line tool is part of the
+separate swift-modelling package.
+
+The workflow has three steps. ``MTLParser`` turns template files or source text into an
+``MTLModule``, resolving imports and `extends` relationships along the way.
+``MTLGenerator`` runs a main template of that module against input models. A
+``MTLGenerationStrategy`` decides where the generated text goes: ``MTLInMemoryStrategy``
+collects it in memory and ``MTLFileSystemStrategy`` writes it to disk.
+
+### Current limits
+
+The swift-aql release that MTL builds on lacks most of the Acceleo standard library, such
+as the string services `toUpperFirst` and `replaceAll` and the collection services
+`sortedBy`, `asSet` and `sum`. These expressions parse, but evaluation needs a later
+swift-aql release. See <doc:UnderstandingMTL> for details.
 
 ## Topics
 
@@ -56,49 +41,67 @@ try await executor.execute()
 - <doc:GettingStarted>
 - <doc:UnderstandingMTL>
 
-### Execution
+### Parsing and Modules
 
-- ``MTLExecutor``
-- ``MTLExecutionContext``
-- ``MTLGenerationStrategy``
-- ``MTLFileGenerationStrategy``
-- ``MTLStringGenerationStrategy``
-
-### Module Structure
-
+- ``MTLParser``
 - ``MTLModule``
 - ``MTLTemplate``
 - ``MTLQuery``
-
-### Template Elements
-
+- ``MTLMacro``
+- ``MTLVisibility``
 - ``MTLBlock``
-- ``MTLFileBlock``
-- ``MTLForBlock``
-- ``MTLIfBlock``
-- ``MTLLetBlock``
-- ``MTLProtectedAreaBlock``
-- ``MTLTextBlock``
-- ``MTLExpressionBlock``
+- ``MTLVariable``
+- ``MTLBinding``
+- ``MTLSyntax``
 
-### Protected Regions
+### Imports and Search Paths
+
+- ``MTLModuleResolver``
+- ``MTLModuleLoader``
+- ``MTLModuleResolutionError``
+
+### Generating Text
+
+- ``MTLGenerator``
+- ``MTLGenerationStatistics``
+- ``MTLGenerationStrategy``
+- ``MTLInMemoryStrategy``
+- ``MTLFileSystemStrategy``
+- ``MTLExecutionContext``
+- ``MTLWriter``
+- ``MTLIndentation``
+
+### Statements
+
+- ``MTLStatement``
+- ``MTLTextStatement``
+- ``MTLExpressionStatement``
+- ``MTLNewLineStatement``
+- ``MTLComment``
+- ``MTLForStatement``
+- ``MTLIfStatement``
+- ``MTLLetStatement``
+- ``MTLFileStatement``
+- ``MTLOpenMode``
+- ``MTLProtectedArea``
+- ``MTLMacroInvocation``
+- ``MTLTrace``
+- ``MTLTraceLink``
+
+### Expressions
+
+- ``MTLExpression``
+- ``MTLInvocationExpression``
+- ``MTLLambdaExpression``
+- ``MTLCollectionLiteralExpression``
+
+### Protected Areas
 
 - ``MTLProtectedAreaManager``
 
-### Parsing
-
-- ``MTLParser``
-- ``MTLLexer``
-- ``MTLSyntaxParser``
-
 ### Errors
 
-- ``MTLExecutionError``
 - ``MTLParseError``
-
-## See Also
-
-- [OMG MOFM2T (MOF Model-to-Text Transformation)](https://www.omg.org/spec/MOFM2T/)
-- [Eclipse Acceleo](https://eclipse.dev/acceleo/)
-- [OMG OCL (Object Constraint Language)](https://www.omg.org/spec/OCL/)
-- [Eclipse Modeling Framework (EMF)](https://eclipse.dev/emf/)
+- ``MTLExecutionError``
+- ``MTLResourceError``
+- ``MTLModuleResolutionError``

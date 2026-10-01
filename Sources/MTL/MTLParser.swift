@@ -1093,7 +1093,7 @@ private actor MTLSyntaxParser {
                 left = MTLExpression(
                     AQLBinaryExpression(left: left.aqlExpression, op: .multiply, right: right.aqlExpression)
                 )
-            case .operator("/"), .slash where peek()?.type != .rightBracket:
+            case .slash where peek()?.type != .rightBracket:
                 // The lexer reports '/' as a slash token; a slash before ']' ends the directive instead
                 advance()
                 let right = try parseUnaryExpression()

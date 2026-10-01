@@ -1,71 +1,39 @@
 # MTL Tests
 
-This directory contains comprehensive tests for the MTL (Model-to-Text Language) parser and CLI.
-
-## Test Suites
-
-- **MTL Parser Tests** - Lexer and parser functionality (73 tests)
-- **MTL Generator Tests** - Text generation from templates
-- **MTL Integration Tests** - End-to-end runtime execution
-- **MTL Statement Tests** - Individual statement execution
-- **MTL Macro Tests** - Macro expansion
-- **MTL Protected Area Tests** - Protected region handling
-- **MTL Indentation Tests** - Whitespace handling
-- **MTL Module Tests** - Module structure
-- **CLI Integration Tests** - End-to-end CLI command testing (30 tests)
-
-**Total: 169 tests**
+Tests for the MTL parser and generator, written with Swift Testing. They are the source of truth for the behaviour of the library.
 
 ## Running Tests
 
-### Basic Usage
-
 ```sh
-cd swift-mtl
 swift test --scratch-path /tmp/build-swift-mtl
 ```
 
-### Using Custom Scratch Path
+## Test Suites
 
-The scratch directory path can be overridden using the `SWIFT_MTL_SCRATCH_PATH` environment variable:
+- `MTLCommentAndHeaderTests.swift`: module headers, metamodel URIs and binding, comments, documentation comments, and encoding
+- `MTLTemplateHeaderTests.swift`: template visibility, guards, post-expressions, `overrides`, and overloading
+- `MTLForAndFileSyntaxTests.swift`: `for` clauses, the implicit counter, `file` modes and charsets, and protected block syntax
+- `MTLExpressionSyntaxTests.swift`: operators, literals, collection literals, `->` calls, lambdas, qualified names, and type operations
+- `MTLInvocationSyntaxTests.swift`: template, query, and macro invocation, receiver style, and overload resolution
+- `MTLWhitespaceTests.swift`: the MOFM2T whitespace rule for lines with only block tags
+- `MTLModuleLoadingTests.swift`: imports, extends, search paths, cycles, missing modules, and visibility across modules
+- `MTLConformanceTests.swift`: parses and runs the fixture and example templates
+- `MTLParserTests.swift`: parser behaviour
+- `MTLModuleTests.swift`: module structure
+- `MTLStatementTests.swift`: statement execution
+- `MTLMacroTests.swift`: macro expansion
+- `MTLGeneratorTests.swift`: the generation engine and strategies
+- `MTLIntegrationTests.swift`: end-to-end generation from parsed and constructed modules
+- `MTLIndentationTests.swift`: indentation handling
+- `MTLProtectedAreaTests.swift`: protected area handling
+- `MTLTests.swift`: index of the suites (no tests of its own)
 
-```sh
-export SWIFT_MTL_SCRATCH_PATH=/custom/build/path
-swift test --scratch-path /custom/build/path
-```
-
-Or inline:
-
-```sh
-env SWIFT_MTL_SCRATCH_PATH=/custom/build/path swift test --scratch-path /custom/build/path
-```
-
-**Note**: Both the `--scratch-path` argument to `swift test` and the `SWIFT_MTL_SCRATCH_PATH` environment variable should point to the same location. The environment variable is used by the test helpers to locate the built `swift-mtl` executable.
-
-### Default Behavior
-
-If `SWIFT_MTL_SCRATCH_PATH` is not set, tests will look for the executable at:
-```
-/tmp/build-swift-mtl/debug/swift-mtl
-```
+`Support/MTLTestSupport.swift` holds the shared helpers for parsing a module, running a template with `MTLInMemoryStrategy`, and locating fixtures.
 
 ## Test Resources
 
-Test templates are located in `Resources/templates/`:
-- `simple-hello.mtl` - Basic template
-- `with-expressions.mtl` - Arithmetic expressions and queries
-- `with-control-flow.mtl` - If/let statements
-- `with-file-blocks.mtl` - File generation
-- `invalid-syntax.mtl` - Parse error testing
-- `missing-module.mtl` - Missing module error
-- `unclosed-block.mtl` - Unclosed block error
+Resources are copied into the test bundle from `Resources/`.
 
-## CLI Integration Tests
-
-The CLI integration tests use subprocess execution to test the actual `swift-mtl` executable:
-- Generate command tests (8 tests)
-- Parse command tests (6 tests)
-- Validate command tests (6 tests)
-- Help and version tests (3 tests)
-
-These tests require the `swift-mtl` executable to be built before running tests.
+- `Resources/templates/`: small templates, `simple-hello.mtl`, `with-expressions.mtl`, `with-control-flow.mtl`, and `with-file-blocks.mtl`, plus malformed ones (`invalid-syntax.mtl`, `unclosed-block.mtl`, `missing-module.mtl`) for error reporting
+- `Resources/modules/`: modules for import and extends tests (`base.mtl`, `derived.mtl`, `main.mtl`, `util.mtl`, `left.mtl`, `right.mtl`, `middle.mtl`, `diamond.mtl`, `transitive.mtl`, `importsderived.mtl`, `importsvendor.mtl`, `extendsmissing.mtl`, `missing.mtl`), with subdirectories `common/` (qualified names), `cyclic/` (import cycles), `dup/` (duplicate signatures), and `searchroot/` (search path lookup, including `vendor/`)
+- `Resources/conformance/`: `acceleo-features.mtl`, which uses each supported construct once, and the `llfsm2*.mtl` templates (C, dot, Lisp, MIPS, NuSMV, PRISM, TLA, and UPPAAL), which are checked for parsing only
