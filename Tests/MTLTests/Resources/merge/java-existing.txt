@@ -1,0 +1,42 @@
+package org.example;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * A library.
+ * @generated
+ */
+public class Library {
+    /**
+     * @generated
+     */
+    protected String name = "old";
+
+    /**
+     * @generated NOT
+     */
+    public String getName() {
+        // user edit: braces in text } { are ignored
+        return name.trim() + "}";
+    }
+
+    /**
+     * @generated
+     */
+    public void setName(String oldName) {
+        name = oldName;
+    }
+
+    /**
+     * @generated
+     */
+    public void removeBook(Beta book) {
+        books.remove(book);
+    }
+
+    /** Hand-written helper without any tag. */
+    private char brace() {
+        return '{';
+    }
+}

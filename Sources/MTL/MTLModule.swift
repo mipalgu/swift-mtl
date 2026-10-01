@@ -122,6 +122,12 @@ public struct MTLModule: Sendable, Equatable, Hashable {
     /// text to files. Common values include "UTF-8", "ISO-8859-1", etc.
     public let encoding: String
 
+    /// The tagged-block merge configuration declared with `[merge (...)/]`.
+    ///
+    /// When present, generated files that already exist are merged with the
+    /// new text instead of being overwritten.
+    public let mergeConfiguration: MTLMergeConfiguration?
+
     // MARK: - Initialisation
 
     /// Creates a new MTL module with the specified configuration.
@@ -135,6 +141,7 @@ public struct MTLModule: Sendable, Equatable, Hashable {
     ///   - queries: Queries indexed by their names (default: empty)
     ///   - macros: Macros indexed by their names (default: empty)
     ///   - encoding: Default character encoding (default: "UTF-8")
+    ///   - mergeConfiguration: Tagged-block merge configuration (default: nil)
     ///
     /// - Precondition: The module name must be a non-empty string
     public init(
@@ -145,7 +152,8 @@ public struct MTLModule: Sendable, Equatable, Hashable {
         templates: OrderedDictionary<String, MTLTemplate> = [:],
         queries: OrderedDictionary<String, MTLQuery> = [:],
         macros: OrderedDictionary<String, MTLMacro> = [:],
-        encoding: String = "UTF-8"
+        encoding: String = "UTF-8",
+        mergeConfiguration: MTLMergeConfiguration? = nil
     ) {
         precondition(!name.isEmpty, "Module name must not be empty")
 
@@ -157,6 +165,7 @@ public struct MTLModule: Sendable, Equatable, Hashable {
         self.queries = queries
         self.macros = macros
         self.encoding = encoding
+        self.mergeConfiguration = mergeConfiguration
     }
 
     // MARK: - Equatable
@@ -179,6 +188,7 @@ public struct MTLModule: Sendable, Equatable, Hashable {
             && lhs.queries == rhs.queries
             && lhs.macros == rhs.macros
             && lhs.encoding == rhs.encoding
+            && lhs.mergeConfiguration == rhs.mergeConfiguration
     }
 
     // MARK: - Hashable
@@ -207,6 +217,7 @@ public struct MTLModule: Sendable, Equatable, Hashable {
         hasher.combine(queries.keys.sorted())
         hasher.combine(macros.keys.sorted())
         hasher.combine(encoding)
+        hasher.combine(mergeConfiguration)
 
         // Hash template values
         for (key, template) in templates.sorted(by: { $0.key < $1.key }) {

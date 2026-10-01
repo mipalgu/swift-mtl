@@ -609,8 +609,11 @@ public struct MTLProtectedArea: MTLStatement {
 
         // Check for preserved content
         if let preservedContent = await context.getProtectedAreaContent(idString) {
-            // Write preserved content
+            // Write preserved content, keeping the end marker on a line of its own
             await context.write(preservedContent, indent: false)
+            if !preservedContent.isEmpty {
+                await context.writeLine()
+            }
         } else {
             // Execute body for default content
             try await body.execute(in: context)

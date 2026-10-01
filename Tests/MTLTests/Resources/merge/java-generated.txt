@@ -1,0 +1,36 @@
+package org.example;
+
+import java.util.List;
+import org.example.Beta;
+
+/**
+ * A library.
+ * @generated
+ */
+public class Library {
+    /**
+     * @generated
+     */
+    protected String name = null;
+
+    /**
+     * @generated
+     */
+    public String getName() {
+        return name;
+    }
+
+    /**
+     * @generated
+     */
+    public void setName(String newName) {
+        name = newName;
+    }
+
+    /**
+     * @generated
+     */
+    public void addBook(Beta book) {
+        books.add(book);
+    }
+}

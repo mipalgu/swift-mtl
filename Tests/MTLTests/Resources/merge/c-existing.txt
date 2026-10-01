@@ -1,0 +1,23 @@
+#include <stdio.h>
+#include <string.h>
+
+/* @generated */
+struct point {
+    int x;
+};
+
+/* @generated NOT */
+int point_sum(struct point p)
+{
+    /* the user prefers a guard */
+    if (p.x < 0) { return 0; }
+    return p.x + p.y;
+}
+
+/* @generated */
+int point_obsolete(void)
+{
+    return 0;
+}
+
+static const char *banner = "}{";

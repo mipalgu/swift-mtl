@@ -95,6 +95,26 @@ public protocol MTLGenerationStrategy: Sendable {
     /// - Throws: `MTLExecutionError.fileError` if finalization fails
     @MainActor
     func finalizeWriter(_ writer: MTLWriter) async throws
+
+    /// Returns the current content of a target that already exists.
+    ///
+    /// The generator uses the content to preserve protected areas before it
+    /// overwrites the target. The default implementation reports that no
+    /// target exists.
+    ///
+    /// - Parameter url: The target file path or identifier
+    ///
+    /// - Returns: The existing content, or `nil` if the target does not exist
+    @MainActor
+    func existingContent(url: String) async -> String?
+}
+
+extension MTLGenerationStrategy {
+
+    @MainActor
+    public func existingContent(url: String) async -> String? {
+        return nil
+    }
 }
 
 // MARK: - MTL File System Strategy
@@ -160,13 +180,36 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
     /// handle existing files during finalization.
     private var writerModes: [ObjectIdentifier: MTLOpenMode] = [:]
 
+    /// The options that control merging, redirection and line delimiters.
+    private let options: MTLGeneratorOptions
+
+    /// The post-processors applied to each file before it is written.
+    private var postProcessors: [any MTLFilePostProcessor]
+
     // MARK: - Initialisation
 
     /// Creates a new file system strategy with the specified base path.
     ///
-    /// - Parameter basePath: The base directory for file output (default: current directory)
-    public init(basePath: String = FileManager.default.currentDirectoryPath) {
+    /// - Parameters:
+    ///   - basePath: The base directory for file output (default: current directory)
+    ///   - options: The options that control how existing files are treated (default: merge when
+    ///     the module declares a merge, otherwise overwrite)
+    ///   - postProcessors: Post-processors applied to each file, in order (default: none)
+    public init(
+        basePath: String = FileManager.default.currentDirectoryPath,
+        options: MTLGeneratorOptions = MTLGeneratorOptions(),
+        postProcessors: [any MTLFilePostProcessor] = []
+    ) {
         self.basePath = basePath
+        self.options = options
+        self.postProcessors = postProcessors
+    }
+
+    /// Attaches a post-processor that runs after all previously attached ones.
+    ///
+    /// - Parameter processor: The post-processor to append
+    public func addPostProcessor(_ processor: any MTLFilePostProcessor) {
+        postProcessors.append(processor)
     }
 
     // MARK: - MTLGenerationStrategy
@@ -212,29 +255,57 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
 
         // Get the accumulated content
         let content = await writer.getContent()
+        let mode = await getWriterMode(writerId)
 
-        // Create parent directory if needed
-        let parentDir = (targetPath as NSString).deletingLastPathComponent
-        if !parentDir.isEmpty && !FileManager.default.fileExists(atPath: parentDir) {
-            try FileManager.default.createDirectory(
-                atPath: parentDir,
-                withIntermediateDirectories: true,
-                attributes: nil
-            )
-        }
+        // Merge, redirect and post-process
+        let existing: String? =
+            mode == .overwrite ? try? String(contentsOfFile: targetPath, encoding: .utf8) : nil
+        let outcome = try await MTLOutputPreparation.prepare(
+            path: targetPath,
+            content: content,
+            existing: existing,
+            mergeConfiguration: await writer.mergeConfiguration,
+            regions: await writer.emittedRegions,
+            options: options,
+            postProcessors: postProcessors
+        )
 
-        // Write to file
-        do {
-            try content.write(toFile: targetPath, atomically: true, encoding: .utf8)
-        } catch {
-            throw MTLExecutionError.fileError("Failed to write file \(targetPath): \(error)")
+        if let outcome {
+            // Create parent directory if needed
+            let parentDir = (outcome.path as NSString).deletingLastPathComponent
+            if !parentDir.isEmpty && !FileManager.default.fileExists(atPath: parentDir) {
+                try FileManager.default.createDirectory(
+                    atPath: parentDir,
+                    withIntermediateDirectories: true,
+                    attributes: nil
+                )
+            }
+
+            // Write to file
+            do {
+                try outcome.content.write(toFile: outcome.path, atomically: true, encoding: .utf8)
+            } catch {
+                throw MTLExecutionError.fileError("Failed to write file \(outcome.path): \(error)")
+            }
         }
 
         // Clean up writer metadata
         await removeWriterMetadata(writerId: writerId)
     }
 
+    @MainActor
+    public func existingContent(url: String) async -> String? {
+        let path = resolveFilePath(url)
+        guard FileManager.default.fileExists(atPath: path) else { return nil }
+        return try? String(contentsOfFile: path, encoding: .utf8)
+    }
+
     // MARK: - Private Helpers
+
+    /// Retrieves the mode for a writer.
+    private func getWriterMode(_ writerId: ObjectIdentifier) -> MTLOpenMode? {
+        return writerModes[writerId]
+    }
 
     /// Resolves a file URL against the base path.
     nonisolated private func resolveFilePath(_ url: String) -> String {
@@ -322,10 +393,46 @@ public actor MTLInMemoryStrategy: MTLGenerationStrategy {
     /// Mapping from writers to their target file paths.
     private var writerFiles: [ObjectIdentifier: String] = [:]
 
+    /// Mapping from writers to their file modes.
+    private var writerModes: [ObjectIdentifier: MTLOpenMode] = [:]
+
+    /// The options that control merging, redirection and line delimiters.
+    private let options: MTLGeneratorOptions
+
+    /// The post-processors applied to each file before it is stored.
+    private var postProcessors: [any MTLFilePostProcessor]
+
     // MARK: - Initialisation
 
     /// Creates a new in-memory generation strategy.
-    public init() {}
+    ///
+    /// - Parameters:
+    ///   - options: The options that control how existing files are treated (default: merge when
+    ///     the module declares a merge, otherwise overwrite)
+    ///   - postProcessors: Post-processors applied to each file, in order (default: none)
+    public init(
+        options: MTLGeneratorOptions = MTLGeneratorOptions(),
+        postProcessors: [any MTLFilePostProcessor] = []
+    ) {
+        self.options = options
+        self.postProcessors = postProcessors
+    }
+
+    /// Attaches a post-processor that runs after all previously attached ones.
+    ///
+    /// - Parameter processor: The post-processor to append
+    public func addPostProcessor(_ processor: any MTLFilePostProcessor) {
+        postProcessors.append(processor)
+    }
+
+    /// Stores content as an existing file, as if it had been generated earlier.
+    ///
+    /// - Parameters:
+    ///   - content: The content of the file
+    ///   - path: The path or identifier of the file
+    public func setFile(_ content: String, at path: String) {
+        files[path] = content
+    }
 
     // MARK: - MTLGenerationStrategy
 
@@ -351,7 +458,7 @@ public actor MTLInMemoryStrategy: MTLGenerationStrategy {
         }
 
         // Store writer metadata
-        await storeWriterMetadata(writerId: writerId, path: url)
+        await storeWriterMetadata(writerId: writerId, path: url, mode: mode)
 
         return writer
     }
@@ -367,8 +474,22 @@ public actor MTLInMemoryStrategy: MTLGenerationStrategy {
         // Get the accumulated content
         let content = await writer.getContent()
 
+        // Merge, redirect and post-process
+        let mode = await getWriterMode(writerId)
+        let outcome = try await MTLOutputPreparation.prepare(
+            path: targetPath,
+            content: content,
+            existing: mode == .overwrite ? await getFile(targetPath) : nil,
+            mergeConfiguration: await writer.mergeConfiguration,
+            regions: await writer.emittedRegions,
+            options: options,
+            postProcessors: postProcessors
+        )
+
         // Store in memory
-        await storeFile(path: targetPath, content: content)
+        if let outcome {
+            await storeFile(path: outcome.path, content: outcome.content)
+        }
 
         // Clean up writer metadata
         await removeWriterMetadata(writerId: writerId)
@@ -406,8 +527,19 @@ public actor MTLInMemoryStrategy: MTLGenerationStrategy {
     }
 
     /// Stores metadata for a writer.
-    private func storeWriterMetadata(writerId: ObjectIdentifier, path: String) {
+    private func storeWriterMetadata(writerId: ObjectIdentifier, path: String, mode: MTLOpenMode) {
         writerFiles[writerId] = path
+        writerModes[writerId] = mode
+    }
+
+    /// Retrieves the mode for a writer.
+    private func getWriterMode(_ writerId: ObjectIdentifier) -> MTLOpenMode? {
+        return writerModes[writerId]
+    }
+
+    @MainActor
+    public func existingContent(url: String) async -> String? {
+        return await getFile(url)
     }
 
     /// Retrieves the file path for a writer.
@@ -418,5 +550,6 @@ public actor MTLInMemoryStrategy: MTLGenerationStrategy {
     /// Removes metadata for a writer.
     private func removeWriterMetadata(writerId: ObjectIdentifier) {
         writerFiles.removeValue(forKey: writerId)
+        writerModes.removeValue(forKey: writerId)
     }
 }
