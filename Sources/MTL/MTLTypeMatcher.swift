@@ -81,7 +81,7 @@ enum MTLTypeMatcher {
 
     /// Whether a value is a collection.
     private static func isCollection(_ value: any EcoreValue) -> Bool {
-        value is EcoreValueArray || value is [any EcoreValue]
+        value is EcoreValueArray
     }
 
     /// Scores a model object against a metaclass name.

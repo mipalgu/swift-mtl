@@ -167,10 +167,11 @@ resolution on their own, for example
 Each stage throws its own error type.
 
 ```swift
+let strategy = MTLInMemoryStrategy()
 do {
     let module = try await parser.parse(URL(fileURLWithPath: "app.mtl"))
-    try await generator(for: module).generate(
-        mainTemplate: "main", arguments: [], models: [:])
+    let generator = MTLGenerator(module: module, generationStrategy: strategy)
+    try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
 } catch let error as MTLModuleResolutionError {
     // A missing module lists every location that was searched.
     print(error.localizedDescription)
@@ -180,8 +181,6 @@ do {
     print("Generation failed: \(error.localizedDescription)")
 }
 ```
-
-(Here `generator(for:)` stands for your own helper that builds an ``MTLGenerator``.)
 
 - ``MTLModuleResolutionError`` reports a missing module (`notFound`, with the paths
   searched and the requiring module) or an import cycle (`cycle`).

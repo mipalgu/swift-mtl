@@ -1,311 +1,266 @@
 # Understanding MTL
 
-Learn the fundamental concepts of the Model-to-Text Language.
+The concepts behind modules, invocations, whitespace handling, file output and protected areas.
 
 ## Overview
 
-MTL (Model-to-Text Language) is a template-based code generation
-language defined by the OMG MOFM2T (MOF Model-to-Text
-Transformation) ([OMG MOFM2T](https://www.omg.org/spec/MOFM2T/))
-standard. The most widely used MTL implementation is Eclipse Acceleo
-([Eclipse Acceleo](https://eclipse.dev/acceleo/)).
+This article describes how the MTL package interprets the MOFM2T / Acceleo dialect. It
+covers what the language does today, including the limits that come from the current
+swift-aql release.
 
-MTL allows you to define templates that combine static text with dynamic content
-extracted from models.
+## Modules
 
-## Template Structure
-
-An MTL module consists of:
-
-1. **Module declaration**: Names the module and declares required metamodels
-2. **Templates**: Define generation entry points
-3. **Queries**: Reusable expressions for model navigation
-4. **Comments**: Documentation within templates
+A module is one `.mtl` file, represented by ``MTLModule``. Its header names the module and
+lists at least one metamodel namespace URI:
 
 ```mtl
-[comment encoding = UTF-8 /]
-[module myGenerator('http://example.com/metamodel')]
+[module name('http://example.com/one', 'http://example.com/two') extends other::module/]
+```
 
-[query public helper(e : Element) : String = e.name.toUpper() /]
+The trailing `/` is optional. The URIs are kept in ``MTLModule/metamodelURIs``, bound to
+`EPackage` values with ``MTLModule/binding(to:)``, and the ones without a package are
+listed in ``MTLModule/unboundMetamodelURIs``. A `[comment encoding = UTF-8 /]` before or
+after the header sets ``MTLModule/encoding``.
 
-[template public generate(e : Element)]
-Content here...
+A module contains templates, queries, macros and imports. Imports (`[import a::b/]`) may
+appear anywhere at the top level. Text outside templates is ignored.
+
+### Comments
+
+- `[comment text /]` ends at the first `/]`.
+- `[comment]...[/comment]` is a block comment holding any text.
+- `[-- text]` ends at the next `]`.
+- `[** ... **/]` is a documentation comment, attached to the following template, query
+  or macro (see ``MTLTemplate/documentation``).
+
+## Templates, queries and macros
+
+A ``MTLTemplate`` produces text:
+
+```mtl
+[template protected name(p : Type, q : Other) ? (guard) post (expr) overrides parent]
+...
 [/template]
 ```
 
-## Block Types
+- Visibility is `public` (the default), `protected` or `private` (see ``MTLVisibility``).
+- A guard is written `? (condition)` or `guard (condition)`. A template whose guard is
+  false produces nothing.
+- `post (expr)` is applied to the generated text with `self` bound to that text, so
+  `post (trim())` strips surrounding white space. A Boolean result acts as a
+  post-condition instead.
+- `overrides name` records which template is overridden. The clauses may appear in any
+  order.
+- Parameter types may be qualified (`ecore::EClass`) or collection types with an element
+  type (`Sequence(String)`).
+- A template marked with `[comment @main /]` in its body, or `@main` in its documentation
+  comment, has ``MTLTemplate/isMain`` set.
 
-### Text Blocks
+A ``MTLQuery`` is a named expression: `[query public name(p : T) : R = expr/]`.
 
-Plain text is output directly:
+A ``MTLMacro`` is `[macro name(p : T, body : Body)]...[/macro]`. Macros have no
+visibility. A parameter of type `Body` receives the text between the tags of the call,
+`[name(args)]body[/name]`, generated in the caller's scope.
+
+`self` is bound to the first argument of every template, query and macro.
+
+## Statements
+
+Template bodies are sequences of ``MTLStatement`` values:
+
+- literal text: ``MTLTextStatement``
+- `[expression/]`: ``MTLExpressionStatement``
+- line breaks: ``MTLNewLineStatement``
+- comments: ``MTLComment``
+- `[for ...]`: ``MTLForStatement``
+- `[if]`, `[elseif]`, `[else]`: ``MTLIfStatement``
+- `[let ...]`: ``MTLLetStatement``
+- `[file ...]`: ``MTLFileStatement``
+- `[protected ...]`: ``MTLProtectedArea``
+- `[name(args)]...[/name]`: ``MTLMacroInvocation``
+
+### For loops
 
 ```mtl
-[template public example(c : Class)]
-This is plain text that will appear in the output.
-The class name is: [c.name/]
-[/template]
+[for (x : T | coll) separator(', ') before('(') after(')')]...[/for]
 ```
 
-### Expression Blocks
+The type is optional, the older `in` form (`x : T in coll`) is accepted, and the
+binding may be left out entirely (`[for (coll)]`), in which case the iterator is `self`.
+The `separator`, `before` and `after` clauses may come in any order. `before` and `after`
+produce output only for a non-empty collection. Inside the body, `i` is a one-based
+counter, unless a loop variable is itself named `i`. Nested loops each have their own
+counter.
 
-Expressions are evaluated and their result is inserted:
+### Let and if
+
+`[let a = e, b = f]...[/let]` binds several variables for its body. `[if (cond)]`,
+`[elseif (cond)]` and `[else]` select text, and `if ... then ... else ... endif` is also an
+expression.
+
+## Expressions
+
+Expressions are swift-aql nodes (`AQLExpression`) built by ``MTLParser`` and evaluated by
+swift-aql against the registered models. The parser supports:
+
+- `if/then/else/endif`, `let x = e in body`, `implies` (right associative and loosest),
+  `xor`, `or`, `and`, comparisons, `+ - * /`, `mod`, `div`, unary `not` and `-`;
+- integer, real, string (with `\\` and `\'` escapes) and `null` literals;
+- qualified names such as `pkg::Type` and `pkg::Enum::literal`;
+- collection literals `Sequence{...}`, `OrderedSet{...}`, `Set{...}` and `Bag{...}`
+  (``MTLCollectionLiteralExpression``);
+- navigation `a.b` and calls;
+- `->name(args)` for any name. The known iterators `select`, `reject`, `collect`, `any`,
+  `exists`, `forAll`, `indexOf`, `size`, `isEmpty`, `notEmpty`, `first` and `last`
+  become AQL collection expressions, other names become calls with the collection as
+  source. A lambda argument `(x | body)` or `(x : T | body)` becomes an
+  ``MTLLambdaExpression``;
+- iterator bodies without a variable, such as `->select(oclIsKindOf(EClass))`, which use
+  `self` as the implicit iterator;
+- the type operations `oclIsKindOf`, `oclIsTypeOf`, `oclAsType` and `oclIsUndefined`. The
+  bare form applies to `self`.
+
+The text escapes `['['/]` and `[']'/]` produce literal brackets.
+
+An ``MTLExpression`` wraps one of these nodes. Calls to templates, queries and macros are
+``MTLInvocationExpression`` nodes. They can occur inside any expression, so
+`[if (isBig(n))]` and `[for (x | items())]` work.
+
+## Invocation resolution
+
+For `[name(args)/]` the runtime looks for a matching element in this order:
+
+1. elements declared in the current module, including private ones;
+2. public and protected elements of the modules it extends;
+3. public elements of imported modules and of their parent modules;
+4. the AQL library (functions such as `min`, `max`, `abs` and `toString`).
+
+Imports are not transitive. Protected and private elements are never visible through an
+import, and protected elements are visible only to extending modules. The receiver form
+`[x.name(a)/]` passes `x` as the first argument, and a template called on a collection
+(`[coll.tmpl()/]`) runs once per element with the texts concatenated.
+
+### Overloading
+
+Templates and queries may share a name when their parameter types differ. Identical
+signatures are an error. Among the applicable overloads the one with the smallest total
+type distance wins: an exact metaclass match costs 0, each supertype step adds 1, and
+`OclAny` or `null` cost a large amount. Ties go to the most derived module.
+
+### Extends and overriding
+
+A module that `extends` another inherits its public and protected templates and queries.
+Calls inside the base module dispatch dynamically to the most specific override in the
+module being run, so a template in the parent that calls `[greet(name)/]` uses the
+overriding `greet` of the derived module:
 
 ```mtl
-[c.name/]                           -- Simple navigation
-[c.name.toUpper()/]                 -- With operation
-[c.attributes->size()/]            -- Collection operation
-[if c.isAbstract then 'abstract ' else '' endif/]  -- Inline conditional
+[module derived('http://example.com/derived') extends base/]
+[template public greet(name : String) overrides greet]Howdy [name/][/template]
 ```
 
-### File Blocks
+Overriding templates record their target in ``MTLTemplate/overrides``. Inheritance
+and imports are discovered through ``MTLModule/extendedModule``,
+``MTLModule/importedModules``, ``MTLModule/templates(named:)`` and
+``MTLModule/queries(named:)``.
 
-File blocks create output files:
+### Loading modules
 
-```mtl
-[file (expression, appendMode, encoding)]
-... content ...
-[/file]
-```
+``MTLModuleResolver`` maps `a::b::c` to `a/b/c.mtl`. It tries the importing file's
+directory first and then each search path in order. ``MTLModuleLoader`` loads a module
+file with its imports and parent recursively, visiting each file once per call. A cycle
+throws ``MTLModuleResolutionError/cycle(_:)`` and a missing module throws
+``MTLModuleResolutionError/notFound(module:searched:requiredBy:)``. ``MTLParser`` performs
+the same work when parsing a file, and ``MTLParser/parseWithoutLinking(_:)`` skips it.
 
-Parameters:
-- **expression**: Filename (can include path)
-- **appendMode**: `false` to overwrite, `true` to append
-- **encoding**: Character encoding (e.g., 'UTF-8')
+## Whitespace
 
-```mtl
-[file (c.name.concat('.swift'), false, 'UTF-8')]
-// Content for [c.name/].swift
-[/file]
-```
-
-### For Blocks
-
-Iterate over collections:
+MTL follows the MOFM2T rule for standalone lines. A line holding only block tags (template,
+macro, `for`, `if`, `elseif`, `else`, `let`, `file`, `protected`, macro invocation tags and
+their closing tags, and comments) plus white space produces no output: its leading white
+space and line break are dropped. A line with text or an expression tag keeps its line
+break. For example:
 
 ```mtl
-[for (variable : Type | collection)]
-... body executed for each element ...
+[for (x | Sequence{'a', 'b'})]
+- [x/]
 [/for]
+done
 ```
 
-Options:
-- **separator**: Text between iterations
-- **before**: Text before the loop (if not empty)
-- **after**: Text after the loop (if not empty)
+produces `- a`, `- b` and `done`, each followed by a line break. A block that shares its
+line with text, such as `[if (true)]a[/if]`, keeps the line break.
 
-```mtl
-[for (attr : Attribute | c.attributes) separator(', ')]
-[attr.name/]
-[/for]
--- Output: name1, name2, name3
+Text is otherwise emitted literally, as in Acceleo 3. Block bodies are not re-indented
+automatically. A multi-line result of an expression, for example from a template call,
+inherits the leading white space of the line on which the expression starts. A collection
+result of an expression tag is written as the concatenation of its elements. Windows line
+endings are handled like Unix ones.
+
+## File blocks and modes
+
+`[file (url, mode, charset)]...[/file]` sends its content to a separate file obtained
+from the generation strategy. The mode is one of:
+
+- `false`, `'overwrite'` or `overwrite` (the default), which replaces earlier content;
+- `true`, `'append'` or `append`, which adds to what was written before;
+- `'create'` or `create`, which throws ``MTLExecutionError`` if the file already exists;
+- any other expression, evaluated when the file opens. The value must be a Boolean or one
+  of the mode strings. Anything else is an error.
+
+An unknown mode string is a syntax error. The charset is recorded and passed to the
+strategy (``MTLFileStatement/modeExpression`` holds a computed mode), but the bundled
+writers always write UTF-8. A file block on its own lines contributes only its content.
+
+## Protected areas
+
+`[protected (id)]default[/protected]` writes a pair of marker lines around the body:
+
+```text
+START PROTECTED REGION id
+...
+END PROTECTED REGION id
 ```
 
-### If Blocks
+The marker lines can be preceded by prefixes, positionally as
+`[protected ('id', '// ', '// ')]` or with the Acceleo clauses
+`[protected ('id') startTagPrefix('// ') endTagPrefix('// ')]`. No prefix is derived from the
+file extension.
 
-Conditional content:
+If the execution context already holds content for that identifier, it is written instead
+of the body. Content can be supplied with
+``MTLExecutionContext/setProtectedAreaContent(_:content:markers:)`` or directly on an
+``MTLProtectedAreaManager``, which can also scan text or a file for existing regions with
+``MTLProtectedAreaManager/scanContent(_:)`` and ``MTLProtectedAreaManager/scanFile(_:)``.
+Automatic scanning of the files about to be overwritten by a generation run is not part
+of the package yet.
 
-```mtl
-[if (condition)]
-... content if true ...
-[elseif (otherCondition)]
-... content if other condition true ...
-[else]
-... content if all conditions false ...
-[/if]
-```
+## Generation strategies and the execution context
 
-### Let Blocks
+``MTLGenerator`` owns an ``MTLExecutionContext`` for one module and a generation
+strategy. ``MTLGenerator/generate(mainTemplate:arguments:models:)`` registers the models,
+finds the main template in the module or its parents (overloads are told apart by argument
+count), runs it and finalises the output.
 
-Define local variables:
+An ``MTLGenerationStrategy`` creates and finalises an ``MTLWriter`` for each output
+target. ``MTLInMemoryStrategy`` stores text by file name, with the main output under
+`stdout`. ``MTLFileSystemStrategy`` writes below a base path. The context tracks variable
+scopes, the current ``MTLIndentation``, protected areas and trace links
+(``MTLTraceLink``). Implement the protocol to send output elsewhere.
 
-```mtl
-[let name : String = c.name.toUpper()]
-The uppercase name is: [name/]
-[/let]
-```
+## Limits
 
-### Protected Area Blocks
-
-Preserve user content across regeneration:
-
-```mtl
-[protected (id)]
-// User content here is preserved
-[/protected]
-```
-
-The `id` must be unique within the file. During regeneration, MTL:
-1. Scans the existing file for protected regions
-2. Stores their content
-3. Regenerates the file
-4. Restores the protected content
-
-## Queries
-
-Queries are reusable expressions that can be called from templates or other queries.
-
-### Simple Queries
-
-```mtl
-[query public fullName(c : Class) : String =
-    c.package.name.concat('.').concat(c.name)
-/]
-```
-
-### Queries with Multiple Expressions
-
-```mtl
-[query public swiftType(t : Type) : String =
-    if t.name = 'String' then 'String'
-    else if t.name = 'Integer' then 'Int'
-    else if t.name = 'Boolean' then 'Bool'
-    else if t.name = 'Double' then 'Double'
-    else 'Any'
-    endif endif endif endif
-/]
-```
-
-### Collection Queries
-
-```mtl
-[query public publicAttributes(c : Class) : Sequence(Attribute) =
-    c.attributes->select(a | a.visibility = 'public')
-/]
-
-[query public attributeNames(c : Class) : Sequence(String) =
-    c.attributes->collect(a | a.name)
-/]
-```
-
-## Template Visibility
-
-Templates can be:
-- **public**: Can be called from other modules
-- **protected**: Can be called from this module and submodules
-- **private**: Can only be called within this module
-
-```mtl
-[template public generatePublic(c : Class)]...[/template]
-[template protected generateProtected(c : Class)]...[/template]
-[template private generatePrivate(c : Class)]...[/template]
-```
-
-## Template Overriding
-
-Templates can override templates from imported modules:
-
-```mtl
-[module myGenerator('http://example.com/mm') extends baseGenerator]
-
-[template public generate(c : Class) overrides generate]
--- This replaces the base template
-[/template]
-```
-
-## AQL Integration
-
-MTL uses AQL (Acceleo Query Language) for expressions. Common operations:
-
-### Navigation
-
-```mtl
-[c.name/]                    -- Attribute
-[c.package/]                 -- Reference
-[c.package.name/]            -- Chained navigation
-```
-
-### Collections
-
-```mtl
-[c.attributes->size()/]                          -- Count
-[c.attributes->first()/]                         -- First element
-[c.attributes->select(a | a.isRequired)/]       -- Filter
-[c.attributes->collect(a | a.name)/]            -- Map
-[c.attributes->forAll(a | a.name <> '')/]       -- All match
-[c.attributes->exists(a | a.isId)/]             -- Any match
-[c.attributes->reject(a | a.isDerived)/]        -- Exclude
-```
-
-### Strings
-
-```mtl
-[name.toUpper()/]                    -- Uppercase
-[name.toLower()/]                    -- Lowercase
-[name.concat('.swift')/]             -- Concatenation
-[name.substring(0, 5)/]              -- Substring
-[name.startsWith('get')/]            -- Prefix check
-[name.replaceAll('_', '')/]          -- Replace
-```
-
-### Type Operations
-
-```mtl
-[c.oclIsKindOf(Entity)/]             -- Type check (including subtypes)
-[c.oclIsTypeOf(Entity)/]             -- Exact type check
-[c.oclAsType(Entity)/]               -- Type cast
-```
-
-## Whitespace Control
-
-MTL preserves whitespace by default. Control it with:
-
-### Trimming
-
-```mtl
-[c.name.trim()/]                     -- Trim result
-```
-
-### Line Control
-
-Place tags at line boundaries to avoid extra blank lines:
-
-```mtl
-[for (attr : Attribute | c.attributes)]
-    var [attr.name/]: [attr.type/]
-[/for]
-```
-
-## Error Handling
-
-Handle potential errors gracefully:
-
-```mtl
-[if (c.superClass <> null)]
-extends [c.superClass.name/]
-[/if]
-
-[-- Use oclIsUndefined to check for null --]
-[if (not c.documentation.oclIsUndefined())]
-/// [c.documentation/]
-[/if]
-```
-
-## Best Practices
-
-1. **Organise templates**: One template per generated file type
-2. **Use queries**: Extract complex expressions into reusable queries
-3. **Protect user code**: Use protected regions for customisation points
-4. **Handle nulls**: Check for undefined values before navigation
-5. **Comment templates**: Document parameters and purpose
-6. **Test incrementally**: Verify output before adding complexity
-
-## Execution Flow
-
-1. **Parse**: MTL file is parsed into a module structure
-2. **Bind**: Model is registered with the execution context
-3. **Execute**: Templates are invoked with model elements
-4. **Evaluate**: Expressions navigate the model and produce text
-5. **Output**: Generated content is written via the generation strategy
-
-## Next Steps
-
-- <doc:GettingStarted> - Practical examples
-- ``MTLTemplate`` - Template API
-- ``MTLProtectedAreaManager`` - Protected region management
-- ``MTLExecutionContext`` - Execution configuration
-
-## See Also
-
-- [OMG MOFM2T (MOF Model-to-Text Transformation)](https://www.omg.org/spec/MOFM2T/)
-- [Eclipse Acceleo](https://eclipse.dev/acceleo/)
-- [OMG OCL (Object Constraint Language)](https://www.omg.org/spec/OCL/)
+- The swift-aql release this package builds on lacks most of the Acceleo standard
+  library. String services such as `toUpperFirst`, `replaceAll` and `tokenize`, and
+  collection services such as `sortedBy`, `asSet`, `including`, `sum`, `reverse` and `at`,
+  are parsed but cannot be evaluated yet. Neither can `div`.
+- `toString` of a number prints `Optional(7)`, `trim()` does not remove line breaks, and
+  `String + Integer` is a type error.
+- Method-style calls on collections such as `coll.size()` do not evaluate. Write
+  `coll->size()`.
+- Qualified type names in `oclIsKindOf(ecore::EClass)` are passed as the full string, and
+  the released AQL compares unqualified names for dynamic objects only.
+- Protected area scanning of existing files, deferred blocks, tagged-block merging and
+  post-processors are not part of the package.
+- Imports are not transitive.
+- The charset of file blocks is recorded but output is always UTF-8.

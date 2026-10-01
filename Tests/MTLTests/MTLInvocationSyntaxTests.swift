@@ -323,3 +323,142 @@ struct MTLInvocationSyntaxTests {
         #expect(output == "innerouter")
     }
 }
+
+@Suite("MTL Invocation Errors and Output")
+struct MTLInvocationErrorTests {
+
+    @Test("No applicable overload gives a message naming the argument types")
+    @MainActor
+    func noApplicableOverload() async {
+        do {
+            _ = try await MTLTestSupport.output("""
+                [module m('u')/]
+                [query kind(x : Integer) : String = 'integer'/]
+                [template main()][kind('text')/][/template]
+                """)
+            Issue.record("Expected an error")
+        } catch let error as MTLExecutionError {
+            guard case .invalidOperation(let message) = error else {
+                Issue.record("Unexpected error \(error)")
+                return
+            }
+            #expect(message.contains("'kind'"))
+            #expect(message.contains("String"))
+        } catch {
+            Issue.record("Unexpected error \(error)")
+        }
+    }
+
+    @Test("A collection receiver whose elements fit no overload is an error")
+    @MainActor
+    func collectionElementsWithoutOverload() async {
+        await #expect(throws: MTLExecutionError.self) {
+            try await MTLTestSupport.output("""
+                [module m('u')/]
+                [template kind(x : Integer)]integer[/template]
+                [template main()][Sequence{'a'}.kind()/][/template]
+                """)
+        }
+    }
+
+    @Test("A collection receiver collects the results of queries")
+    @MainActor
+    func queryOnCollection() async throws {
+        let output = try await MTLTestSupport.output("""
+            [module m('u')/]
+            [query double(x : Integer) : Integer = x * 2/]
+            [template main()][Sequence{1, 2, 3}.double()/][/template]
+            """)
+        #expect(output == "246")
+    }
+
+    @Test("A failure inside a called template restores the output")
+    @MainActor
+    func failureInCalledTemplate() async throws {
+        let module = try await MTLTestSupport.parse("""
+            [module m('u')/]
+            [template bad()][missing(1)/][/template]
+            [template main()]before[bad()/][/template]
+            """)
+        await #expect(throws: (any Error).self) {
+            _ = try await MTLTestSupport.run(module)
+        }
+    }
+
+    @Test("A post expression that is null fails")
+    @MainActor
+    func nullPost() async {
+        await #expect(throws: MTLExecutionError.self) {
+            try await MTLTestSupport.output("[module m('u')/][template main() post (null)]x[/template]")
+        }
+    }
+
+    @Test("A post expression that is not text replaces the output by its description")
+    @MainActor
+    func numericPost() async throws {
+        let output = try await MTLTestSupport.output("[module m('u')/][template main() post (1 + 1)]x[/template]")
+        #expect(output == "2")
+    }
+
+    @Test("A collection value is written as the concatenation of its elements")
+    @MainActor
+    func collectionOutput() async throws {
+        let output = try await MTLTestSupport.output("[module m('u')/][template main()][Sequence{'a', Sequence{'b', 'c'}}/][/template]")
+        #expect(output == "abc")
+    }
+
+    @Test("The generator checks the argument count of templates")
+    @MainActor
+    func generatorArgumentCount() async throws {
+        let module = try await MTLTestSupport.parse("[module m('u')/][template main(x : String)]x[/template]")
+        let generator = MTLGenerator(module: module, generationStrategy: MTLInMemoryStrategy())
+        await #expect(throws: MTLExecutionError.self) {
+            try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
+        }
+    }
+
+    @Test("The generator reports a missing main template")
+    @MainActor
+    func generatorMissingMain() async throws {
+        let module = try await MTLTestSupport.parse("[module m('u')/][template other()]x[/template]")
+        let generator = MTLGenerator(module: module, generationStrategy: MTLInMemoryStrategy())
+        await #expect(throws: MTLExecutionError.self) {
+            try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
+        }
+    }
+
+    @Test("Overloaded main templates are selected by argument count")
+    @MainActor
+    func overloadedMain() async throws {
+        let source = """
+            [module m('u')/]
+            [template main()]none[/template]
+            [template main(x : String)]one[/template]
+            """
+        #expect(try await MTLTestSupport.output(source) == "none")
+        #expect(try await MTLTestSupport.output(source, arguments: ["x"]) == "one")
+    }
+
+    @Test("A macro invoked with the wrong number of arguments is an error")
+    @MainActor
+    func macroArgumentCount() async {
+        await #expect(throws: MTLExecutionError.self) {
+            try await MTLTestSupport.output("""
+                [module m('u')/]
+                [macro wrap(a : String, content : Body)][content/][/macro]
+                [template main()][wrap(1, 2)]x[/wrap][/template]
+                """)
+        }
+    }
+
+    @Test("An unknown macro with a body is reported")
+    @MainActor
+    func unknownMacro() async {
+        await #expect(throws: MTLExecutionError.self) {
+            try await MTLTestSupport.output("""
+                [module m('u')/]
+                [template main()][nothing()]x[/nothing][/template]
+                """)
+        }
+    }
+}

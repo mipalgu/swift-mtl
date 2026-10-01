@@ -273,9 +273,7 @@ extension MTLExecutionContext {
 
     /// The elements of a collection value, or `nil` for any other value.
     private func collectionElements(of value: (any EcoreValue)?) -> [any EcoreValue]? {
-        if let array = value as? EcoreValueArray { return array.values }
-        if let array = value as? [any EcoreValue] { return array }
-        return nil
+        (value as? EcoreValueArray)?.values
     }
 
     /// Invokes a callable once per element of a collection receiver.
@@ -531,9 +529,6 @@ extension MTLExecutionContext {
     func renderedText(of value: any EcoreValue) -> String {
         if let array = value as? EcoreValueArray {
             return array.values.map { renderedText(of: $0) }.joined()
-        }
-        if let array = value as? [any EcoreValue] {
-            return array.map { renderedText(of: $0) }.joined()
         }
         return "\(value)"
     }
