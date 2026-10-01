@@ -163,7 +163,16 @@ means a line comment), the generated tag, the keep tag and the strategy
 `'key=value'` adjust the lexical conventions: `lineComments` (space-separated
 markers), `blockComment` (start and end separated by a space), `quotes`,
 `terminators` (characters that end a member; `\n` for newline-terminated
-languages) and `opener`.
+languages), `opener` and `files`.
+
+`files` restricts the merge to matching files: a space-separated list of glob
+patterns, for example `'files=*.java'`. `*` matches any characters except `/`,
+`**` matches any characters, and `?` matches one character. A pattern without
+`/` is matched against the last path component of the file URL, any other
+pattern against the whole URL. Files that do not match are written as plain
+overwrites. Without `files` the merge applies to every file. A `[file]` block
+can also opt out with a trailing option, as in
+`[file ('plugin.xml', 'overwrite', 'UTF-8', 'merge=false')]`.
 
 When the target exists and force overwrite is off, blocks whose leading
 comment contains the keep tag, or no tag at all, are preserved; blocks with
@@ -171,6 +180,28 @@ the generated tag are replaced; new tagged blocks are added; generated blocks
 that are no longer produced are removed. Blocks are matched by normalised
 signature within the matching parent. Lines of an `[emit]` region present in
 the old file but missing from the new one are kept.
+
+### File Context
+
+In `create` mode an existing file is left untouched: no error is raised and the
+body is not evaluated (no output, no `[collect]`, no nested `[file]`).
+
+Two built-in services expose the file context to templates:
+
+- `fileExists(path)` is true if a file exists at the path, relative to the
+  generation base path (or absolute). Files written earlier in the same run count.
+- `forceOverwrite()` returns the generator's `forceOverwrite` option.
+
+```
+[if (not fileExists('plugin.xml'))]
+[file ('build.properties')]...[/file]
+[/if]
+```
+
+The charset of a `file` block is honoured: `UTF-8` (the default), `UTF-16`
+(big-endian with byte order mark), `UTF-16BE`, `UTF-16LE`, `ISO-8859-1`
+(`Latin-1`) and `US-ASCII`. A character that the charset cannot represent, or an
+unsupported charset, is an error and nothing is written.
 
 ### Generator Options and Post-Processing
 
@@ -257,7 +288,7 @@ The test suites are described in [Tests/MTLTests/README.md](Tests/MTLTests/READM
 - Qualified type names in `oclIsKindOf(ecore::EClass)` are passed as the full string, and the released AQL compares unqualified names for dynamic objects only.
 - Automatic scanning of protected areas in existing files, deferred blocks, tagged-block merge, and post-processors are not available.
 - Protected area markers are `START PROTECTED REGION id` and `END PROTECTED REGION id` preceded by the configured prefixes; there are no default prefixes derived from the file extension.
-- The charset of a `file` block is recorded and passed to the generation strategy, but the bundled writers always write UTF-8.
+- Only the charsets listed under File Context are supported.
 - Macros have no visibility.
 
 ## Compatibility

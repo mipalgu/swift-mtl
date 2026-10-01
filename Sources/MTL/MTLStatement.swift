@@ -249,7 +249,7 @@ public enum MTLOpenMode: String, Sendable, Codable, Equatable, Hashable {
     case overwrite
     /// Append to the file if it exists, create if it doesn't.
     case append
-    /// Create the file only if it doesn't exist, fail otherwise.
+    /// Create the file only if it doesn't exist; an existing file is left untouched without error.
     case create
 }
 
