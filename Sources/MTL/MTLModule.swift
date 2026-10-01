@@ -229,6 +229,19 @@ public struct MTLModule: Sendable, Equatable, Hashable {
     ///   - extendedModule: The loaded module named by ``extends``, if any.
     /// - Returns: A module that is identical except for the attached modules.
     public func linking(imports: [MTLModule], extending extendedModule: MTLModule?) -> MTLModule {
+        rebuilt(location: location, imports: imports, extending: extendedModule)
+    }
+
+    /// Returns a copy of the module that records where it was loaded from.
+    ///
+    /// - Parameter url: The file the module was loaded from.
+    /// - Returns: A module that is identical except for its location.
+    public func located(at url: URL?) -> MTLModule {
+        rebuilt(location: url, imports: importedModules, extending: extendedModule)
+    }
+
+    /// Copies the module with a different location and linked modules.
+    private func rebuilt(location: URL?, imports: [MTLModule], extending extendedModule: MTLModule?) -> MTLModule {
         MTLModule(
             name: name,
             metamodels: metamodels,

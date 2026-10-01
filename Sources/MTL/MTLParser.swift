@@ -548,20 +548,50 @@ public actor MTLParser {
 
     private let enableDebugging: Bool
 
+    /// The directories searched for imported and extended modules after the importing file's directory.
+    private let searchPaths: [URL]
+
     // MARK: - Initialization
 
-    public init(enableDebugging: Bool = false) {
+    /// Creates a parser.
+    ///
+    /// - Parameters:
+    ///   - enableDebugging: Whether the parser logs its progress.
+    ///   - searchPaths: The directories searched for imported and extended modules,
+    ///     after the directory of the importing file (default: none).
+    public init(enableDebugging: Bool = false, searchPaths: [URL] = []) {
         self.enableDebugging = enableDebugging
+        self.searchPaths = searchPaths
     }
 
     // MARK: - Parsing
 
-    /// Parses an MTL template file.
+    /// Parses an MTL template file together with the modules it imports and extends.
+    ///
+    /// Imported and extended modules are located relative to the file first,
+    /// then in the search paths given to the initialiser, and are attached to
+    /// the returned module so that their templates and queries can be called.
+    ///
+    /// - Parameter url: URL of the MTL file to parse
+    /// - Returns: Parsed MTLModule with its imports and parent module attached
+    /// - Throws: MTLParseError if parsing fails, MTLResourceError if a file cannot be read,
+    ///   MTLModuleResolutionError if an imported or extended module is missing or cyclic
+    public func parse(_ url: URL) async throws -> MTLModule {
+        let loader = MTLModuleLoader(
+            resolver: MTLModuleResolver(searchPaths: searchPaths),
+            enableDebugging: enableDebugging
+        )
+        return try await loader.load(url)
+    }
+
+    /// Parses an MTL template file without loading the modules it imports and extends.
+    ///
+    /// The returned module records its location but lists its imports by name only.
     ///
     /// - Parameter url: URL of the MTL file to parse
     /// - Returns: Parsed MTLModule
-    /// - Throws: MTLParseError if parsing fails
-    public func parse(_ url: URL) async throws -> MTLModule {
+    /// - Throws: MTLParseError if parsing fails, MTLResourceError if the file cannot be read
+    public func parseWithoutLinking(_ url: URL) async throws -> MTLModule {
         debugPrint("Parsing MTL file: \(url.path)")
 
         // Read file
@@ -569,7 +599,24 @@ public actor MTLParser {
             throw MTLResourceError.loadError("Could not read file: \(url.path)")
         }
 
-        return try await parse(contents, filename: url.lastPathComponent)
+        let module = try await parse(contents, filename: url.lastPathComponent)
+        return module.located(at: url)
+    }
+
+    /// Attaches the imports and parent module to a module parsed from source text.
+    ///
+    /// - Parameters:
+    ///   - module: The module returned by ``parse(_:filename:)``.
+    ///   - location: The file the source came from, used to resolve relative imports;
+    ///     pass `nil` to use only the search paths.
+    /// - Returns: The module with its imports and parent module attached
+    /// - Throws: MTLModuleResolutionError if an imported or extended module is missing or cyclic
+    public func link(_ module: MTLModule, relativeTo location: URL? = nil) async throws -> MTLModule {
+        let loader = MTLModuleLoader(
+            resolver: MTLModuleResolver(searchPaths: searchPaths),
+            enableDebugging: enableDebugging
+        )
+        return try await loader.link(module, relativeTo: location)
     }
 
     /// Parses MTL template source code.
