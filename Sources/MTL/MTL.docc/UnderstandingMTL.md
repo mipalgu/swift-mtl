@@ -246,7 +246,10 @@ count), runs it and finalises the output.
 
 An ``MTLGenerationStrategy`` creates and finalises an ``MTLWriter`` for each output
 target. ``MTLInMemoryStrategy`` stores text by file name, with the main output under
-`stdout`. ``MTLFileSystemStrategy`` writes below a base path. The context tracks variable
+`stdout` (``MTLStandardOutput/fileName``). ``MTLFileSystemStrategy`` writes below a base path
+and never writes text produced outside a file block to disk; it discards that text, keeps it
+for ``MTLFileSystemStrategy/standardOutput`` or passes it to a handler, as chosen with
+``MTLStandardOutputSink``. The context tracks variable
 scopes, the current ``MTLIndentation``, protected areas and trace links
 (``MTLTraceLink``). Implement the protocol to send output elsewhere.
 

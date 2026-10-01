@@ -107,9 +107,34 @@ public protocol MTLGenerationStrategy: Sendable {
     /// - Returns: The existing content, or `nil` if the target does not exist
     @MainActor
     func existingContent(url: String) async -> String?
+
+    /// Receives the text a generation run wrote outside any file block.
+    ///
+    /// The generator calls this once, when the run finishes. The default implementation stores
+    /// the text as if it were a file named ``MTLStandardOutput/fileName``, which is what
+    /// in-memory strategies expect. Strategies that write to disk override it to avoid creating
+    /// such a file.
+    ///
+    /// - Parameter text: The complete text written outside any file block
+    ///
+    /// - Throws: `MTLExecutionError.fileError` if the text cannot be stored
+    @MainActor
+    func writeStandardOutput(_ text: String) async throws
 }
 
 extension MTLGenerationStrategy {
+
+    @MainActor
+    public func writeStandardOutput(_ text: String) async throws {
+        let writer = try await createWriter(
+            url: MTLStandardOutput.fileName,
+            mode: .overwrite,
+            charset: "UTF-8",
+            indentation: MTLIndentation()
+        )
+        await writer.write(text, indent: false)
+        try await finalizeWriter(writer)
+    }
 
     @MainActor
     public func existingContent(url: String) async -> String? {
@@ -186,6 +211,15 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
     /// The post-processors applied to each file before it is written.
     private var postProcessors: [any MTLFilePostProcessor]
 
+    /// Where the text written outside any file block goes.
+    private let standardOutputSink: MTLStandardOutputSink
+
+    /// The text written outside any file block during the latest run.
+    ///
+    /// Only populated when the strategy was created with ``MTLStandardOutputSink/capture``;
+    /// otherwise this is `nil`.
+    public private(set) var standardOutput: String?
+
     // MARK: - Initialisation
 
     /// Creates a new file system strategy with the specified base path.
@@ -195,14 +229,34 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
     ///   - options: The options that control how existing files are treated (default: merge when
     ///     the module declares a merge, otherwise overwrite)
     ///   - postProcessors: Post-processors applied to each file, in order (default: none)
+    ///   - standardOutput: What to do with text written outside any file block (default:
+    ///     discard it; such text is never written to a file)
     public init(
         basePath: String = FileManager.default.currentDirectoryPath,
         options: MTLGeneratorOptions = MTLGeneratorOptions(),
-        postProcessors: [any MTLFilePostProcessor] = []
+        postProcessors: [any MTLFilePostProcessor] = [],
+        standardOutput: MTLStandardOutputSink = .discard
     ) {
         self.basePath = basePath
         self.options = options
         self.postProcessors = postProcessors
+        self.standardOutputSink = standardOutput
+    }
+
+    @MainActor
+    public func writeStandardOutput(_ text: String) async throws {
+        switch standardOutputSink {
+        case .discard:
+            break
+        case .capture:
+            await storeStandardOutput(text)
+        case .handler(let handle):
+            await handle(text)
+        }
+    }
+
+    private func storeStandardOutput(_ text: String) {
+        standardOutput = text
     }
 
     /// Attaches a post-processor that runs after all previously attached ones.

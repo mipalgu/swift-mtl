@@ -824,22 +824,9 @@ public final class MTLExecutionContext: Sendable {
             deferredStates[0].emits = [:]
         }
 
-        // Save the main writer's content to stdout
+        // Hand the text written outside any file block to the strategy
         if let mainWriter = writerStack.first {
-            // For in-memory strategy, create and finalize a writer for stdout
-            let stdoutWriter = try await generationStrategy.createWriter(
-                url: "stdout",
-                mode: .overwrite,
-                charset: "UTF-8",
-                indentation: MTLIndentation() // Start with zero indentation
-            )
-
-            // Copy content from main writer to stdout writer
-            let content = await mainWriter.getContent()
-            await stdoutWriter.write(content, indent: false)
-
-            // Finalize stdout writer to save content
-            try await generationStrategy.finalizeWriter(stdoutWriter)
+            try await generationStrategy.writeStandardOutput(await mainWriter.getContent())
         }
     }
 
