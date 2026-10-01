@@ -51,7 +51,7 @@ enum MTLStandaloneLines {
 
         for atom in atoms {
             line.append(atom)
-            if case .text(let value, _) = atom, value.hasSuffix("\n") {
+            if case .text(let value, _) = atom, value.last.map(isLineBreak) == true {
                 flush()
             }
         }
@@ -111,13 +111,18 @@ enum MTLStandaloneLines {
         return atoms
     }
 
+    /// Whether a character ends a line (`\n`, or `\r\n`, which Swift treats as one character).
+    private static func isLineBreak(_ character: Character) -> Bool {
+        character == "\n" || character == "\r\n"
+    }
+
     /// Splits text after each line break, keeping the line breaks.
     private static func lines(of text: String) -> [String] {
         var pieces: [String] = []
         var current = ""
         for character in text {
             current.append(character)
-            if character == "\n" {
+            if isLineBreak(character) {
                 pieces.append(current)
                 current = ""
             }
