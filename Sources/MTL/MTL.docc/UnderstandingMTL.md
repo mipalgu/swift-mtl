@@ -206,13 +206,16 @@ from the generation strategy. The mode is one of:
 
 - `false`, `'overwrite'` or `overwrite` (the default), which replaces earlier content;
 - `true`, `'append'` or `append`, which adds to what was written before;
-- `'create'` or `create`, which throws ``MTLExecutionError`` if the file already exists;
+- `'create'` or `create`, which leaves an existing file untouched (the body is not evaluated and no error is raised);
 - any other expression, evaluated when the file opens. The value must be a Boolean or one
   of the mode strings. Anything else is an error.
 
-An unknown mode string is a syntax error. The charset is recorded and passed to the
-strategy (``MTLFileStatement/modeExpression`` holds a computed mode), but the bundled
-writers always write UTF-8. A file block on its own lines contributes only its content.
+An unknown mode string is a syntax error. The charset is honoured by the bundled
+strategies (``MTLCharset``): UTF-8, UTF-16, UTF-16BE, UTF-16LE, ISO-8859-1 and US-ASCII.
+A character the charset cannot represent is an error. Further `'key=value'` options may
+follow the charset (``MTLFileOptions``): `'merge=false'` excludes the file from the
+module's `[merge]` declaration. The built-in `fileExists(path)` and `forceOverwrite()`
+services let a template inspect the file context. A file block on its own lines contributes only its content.
 
 ## Protected areas
 
@@ -268,4 +271,3 @@ scopes, the current ``MTLIndentation``, protected areas and trace links
 - Protected area scanning of existing files, deferred blocks, tagged-block merging and
   post-processors are not part of the package.
 - Imports are not transitive.
-- The charset of file blocks is recorded but output is always UTF-8.

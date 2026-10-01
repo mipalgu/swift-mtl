@@ -102,10 +102,9 @@ try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
 ```
 
 The second argument of `file` is the mode. `false` overwrites, `true` appends, and
-`'overwrite'`, `'append'` and `'create'` (which fails if the file exists) are also
+`'overwrite'`, `'append'` and `'create'` (which leaves an existing file untouched) are also
 accepted, as are the bare keywords `overwrite`, `append` and `create`. An optional third
-argument names the charset. It is recorded and passed to the strategy, but the bundled
-writers always write UTF-8. With ``MTLInMemoryStrategy`` the same blocks end up in the
+argument names the charset (UTF-8 by default). With ``MTLInMemoryStrategy`` the same blocks end up in the
 dictionary returned by ``MTLInMemoryStrategy/getGeneratedFiles()``, keyed by file name.
 
 ### Queries, templates and macros
@@ -187,8 +186,7 @@ do {
 - ``MTLParseError`` reports invalid syntax, such as a `for` without `in` or `|`, or an
   unknown file mode string.
 - ``MTLExecutionError`` reports runtime problems: a template that cannot be found, a
-  failed guard or post-condition, a type error, or a file that already exists in
-  `create` mode.
+  failed guard or post-condition, or a type error.
 
 ### Next steps
 

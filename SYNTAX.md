@@ -333,8 +333,32 @@ charset. The mode is one of:
 | create | `'create'`, `create` |
 
 Any other expression is evaluated when the file is opened and interpreted in the
-same way (for example `1 > 0`). The charset is recorded and passed to the
-generation strategy (see the limits below).
+same way (for example `1 > 0`). The charset is applied when the file is written (see "Charsets" below).
+
+Options may follow the charset, each as a string literal `'key=value'`:
+
+```mtl
+[file ('plugin.xml', 'overwrite', 'UTF-8', 'merge=false')]
+```
+
+`merge=false` stops the module's `[merge]` declaration from applying to this
+file (`merge=true` is the default). Unknown keys are syntax errors.
+
+In `create` mode an existing file is left untouched: no error is raised, the
+body is not evaluated (so it produces no output and its `[collect]` and nested
+`[file]` blocks have no effect), and nothing is written. A missing file is
+written normally.
+
+#### Charsets
+
+The charset names are matched ignoring case, hyphens and underscores:
+`UTF-8` (the default), `UTF-16` (big-endian with a byte order mark), `UTF-16BE`,
+`UTF-16LE`, `ISO-8859-1` (also `Latin-1`) and `US-ASCII`. Bytes are written in
+that charset, and existing files are read in it when appending or merging. An
+unsupported charset name, or a character that the charset cannot represent, is
+an `MTLExecutionError.fileError` naming the file (and the character); nothing is
+written. Templates that target formats with escapes (such as Java properties
+files) should escape such characters themselves.
 
 ### Protected
 
@@ -579,8 +603,7 @@ Protected areas and files:
 - The protected area markers are `START PROTECTED REGION id` and
   `END PROTECTED REGION id` preceded by the configured prefixes. No default
   prefixes are derived from the file extension.
-- The charset of a `file` block is recorded and handed to the generation
-  strategy, but the bundled writers always write UTF-8.
+- Only the charsets listed under "Charsets" are supported.
 
 Modules:
 

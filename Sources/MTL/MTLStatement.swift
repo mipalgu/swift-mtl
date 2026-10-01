@@ -249,7 +249,7 @@ public enum MTLOpenMode: String, Sendable, Codable, Equatable, Hashable {
     case overwrite
     /// Append to the file if it exists, create if it doesn't.
     case append
-    /// Create the file only if it doesn't exist, fail otherwise.
+    /// Create the file only if it doesn't exist; an existing file is left untouched without error.
     case create
 }
 
@@ -550,6 +550,9 @@ public struct MTLFileStatement: MTLStatement {
     /// Optional charset expression.
     public let charset: MTLExpression?
 
+    /// The per-file options.
+    public let options: MTLFileOptions
+
     /// The block to execute (output goes to the file).
     public let body: MTLBlock
 
@@ -563,6 +566,7 @@ public struct MTLFileStatement: MTLStatement {
     ///   - mode: The file open mode (default: .overwrite)
     ///   - modeExpression: An expression that overrides `mode` at generation time (default: nil)
     ///   - charset: Optional charset expression (default: nil)
+    ///   - options: The per-file options (default: none)
     ///   - body: The file content block
     ///   - multiLines: Whether this is multi-line (default: true)
     public init(
@@ -570,6 +574,7 @@ public struct MTLFileStatement: MTLStatement {
         mode: MTLOpenMode = .overwrite,
         modeExpression: MTLExpression? = nil,
         charset: MTLExpression? = nil,
+        options: MTLFileOptions = MTLFileOptions(),
         body: MTLBlock,
         multiLines: Bool = true
     ) {
@@ -577,10 +582,20 @@ public struct MTLFileStatement: MTLStatement {
         self.mode = mode
         self.modeExpression = modeExpression
         self.charset = charset
+        self.options = options
         self.body = body
         self.multiLines = multiLines
     }
 
+    /// Writes the file block's body to its file.
+    ///
+    /// In `create` mode an existing file is left untouched: the body is not
+    /// evaluated at all, so it produces no output and has no side effects such
+    /// as `[collect]`, and no error is raised.
+    ///
+    /// - Parameter context: The execution context.
+    /// - Throws: An error if the URL, mode or charset is invalid, the charset
+    ///   cannot represent the generated text, or the file cannot be written.
     @MainActor
     public func execute(in context: MTLExecutionContext) async throws {
         // Evaluate URL
@@ -600,6 +615,9 @@ public struct MTLFileStatement: MTLStatement {
             effectiveMode = computed
         }
 
+        // An existing file is never replaced in create mode
+        if effectiveMode == .create, await context.fileExists(urlString) { return }
+
         // Evaluate charset if present
         let charsetString: String
         if let charset = charset {
@@ -610,7 +628,8 @@ public struct MTLFileStatement: MTLStatement {
         }
 
         // Open file
-        try await context.openFile(url: urlString, mode: effectiveMode, charset: charsetString)
+        try await context.openFile(
+            url: urlString, mode: effectiveMode, charset: charsetString, options: options)
 
         // Execute body
         try await body.execute(in: context)

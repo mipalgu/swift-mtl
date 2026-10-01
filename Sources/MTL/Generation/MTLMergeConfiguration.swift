@@ -163,6 +163,12 @@ public struct MTLMergeConfiguration: Sendable, Equatable, Hashable {
     /// The lexical conventions used to find blocks.
     public let syntax: MTLMergeSyntax
 
+    /// The glob patterns of the files this configuration applies to.
+    ///
+    /// An empty list means that the configuration applies to every file. See
+    /// ``applies(toFile:)`` for the pattern syntax.
+    public let filePatterns: [String]
+
     /// Creates a merge configuration.
     ///
     /// The declared comment delimiters are added to the comment markers of
@@ -175,14 +181,17 @@ public struct MTLMergeConfiguration: Sendable, Equatable, Hashable {
     ///   - keepTag: The tag that marks a block as edited by hand.
     ///   - strategy: How block boundaries are found (default: `.braces`).
     ///   - syntax: Overrides for the lexical conventions (default: the strategy defaults).
+    ///   - filePatterns: Glob patterns of the files to merge (default: all files).
     public init(
         commentStart: String,
         commentEnd: String,
         generatedTag: String,
         keepTag: String,
         strategy: MTLMergeStrategy = .braces,
-        syntax: MTLMergeSyntax? = nil
+        syntax: MTLMergeSyntax? = nil,
+        filePatterns: [String] = []
     ) {
+        self.filePatterns = filePatterns
         self.commentStart = commentStart
         self.commentEnd = commentEnd
         self.generatedTag = generatedTag
@@ -226,5 +235,21 @@ public struct MTLMergeConfiguration: Sendable, Equatable, Hashable {
         if !keepTag.isEmpty && leadingComment.contains(keepTag) { return .kept }
         if !generatedTag.isEmpty && leadingComment.contains(generatedTag) { return .generated }
         return .user
+    }
+
+    /// Tells whether this configuration applies to the file with the given URL.
+    ///
+    /// Without file patterns every file matches. Otherwise the URL must match at
+    /// least one pattern. In a pattern, `*` matches any run of characters except
+    /// `/`, `**` matches any run of characters including `/`, and `?` matches
+    /// exactly one character other than `/`. A pattern without `/` is matched
+    /// against the last path component of the URL; a pattern with `/` is matched
+    /// against the whole URL.
+    ///
+    /// - Parameter url: The URL of the file as written in the `file` block.
+    /// - Returns: `true` if the file is to be merged.
+    public func applies(toFile url: String) -> Bool {
+        guard !filePatterns.isEmpty else { return true }
+        return filePatterns.contains { MTLFileGlob.matches(pattern: $0, url: url) }
     }
 }

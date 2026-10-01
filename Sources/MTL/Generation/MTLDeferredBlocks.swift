@@ -41,6 +41,12 @@ struct MTLDeferredState {
     /// The protected areas known before the file was scanned, restored when it closes.
     var protectedAreasBeforeScan: [String: MTLProtectedAreaManager.ProtectedAreaContent]?
 
+    /// The URL of the file as written in the `file` block.
+    var fileURL = ""
+
+    /// The per-file options of the `file` block.
+    var fileOptions = MTLFileOptions()
+
     /// Builds the placeholder text for an emit block.
     static func placeholder(for identifier: Int) -> String {
         "\(MTLDeferredBlockNames.placeholderOpen)\(identifier)\(MTLDeferredBlockNames.placeholderClose)"

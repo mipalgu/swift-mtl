@@ -108,6 +108,23 @@ public protocol MTLGenerationStrategy: Sendable {
     @MainActor
     func existingContent(url: String) async -> String?
 
+    /// Tells whether a file already exists at the given URL.
+    ///
+    /// Templates reach this through the `fileExists` service, and `create` mode
+    /// blocks use it to decide whether to skip their body. The default
+    /// implementation reports whether ``existingContent(url:)`` returns text.
+    ///
+    /// - Parameter url: The file URL, relative to the generation base path unless absolute.
+    /// - Returns: `true` if a file exists at the URL.
+    @MainActor
+    func fileExists(url: String) async -> Bool
+
+    /// The generator options this strategy applies.
+    ///
+    /// Templates read the force overwrite flag through the `forceOverwrite`
+    /// service. The default implementation returns the default options.
+    var generatorOptions: MTLGeneratorOptions { get }
+
     /// Receives the text a generation run wrote outside any file block.
     ///
     /// The generator calls this once, when the run finishes. The default implementation stores
@@ -140,6 +157,15 @@ extension MTLGenerationStrategy {
     public func existingContent(url: String) async -> String? {
         return nil
     }
+
+    @MainActor
+    public func fileExists(url: String) async -> Bool {
+        return await existingContent(url: url) != nil
+    }
+
+    public var generatorOptions: MTLGeneratorOptions {
+        MTLGeneratorOptions()
+    }
 }
 
 // MARK: - MTL File System Strategy
@@ -161,7 +187,7 @@ extension MTLGenerationStrategy {
 ///
 /// - `.overwrite`: Replace existing file or create new
 /// - `.append`: Append to existing file or create new
-/// - `.create`: Create new file, fail if exists
+/// - `.create`: Create new file; if the file exists it is left untouched and nothing is written
 ///
 /// ## Example Usage
 ///
@@ -204,6 +230,9 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
     /// This tracks the opening mode for each writer to determine how to
     /// handle existing files during finalization.
     private var writerModes: [ObjectIdentifier: MTLOpenMode] = [:]
+
+    /// The character set of each open writer.
+    private var writerCharsets: [ObjectIdentifier: MTLCharset] = [:]
 
     /// The options that control merging, redirection and line delimiters.
     private let options: MTLGeneratorOptions
@@ -275,6 +304,7 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
         charset: String,
         indentation: MTLIndentation
     ) async throws -> MTLWriter {
+        let resolvedCharset = try MTLCharset.resolve(charset)
         let writer = MTLWriter(indentation: indentation)
         let writerId = ObjectIdentifier(writer)
 
@@ -282,19 +312,13 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
         let targetPath = resolveFilePath(url)
 
         // For append mode, load existing content
-        if mode == .append && FileManager.default.fileExists(atPath: targetPath) {
-            if let existingContent = try? String(contentsOfFile: targetPath, encoding: .utf8) {
-                await writer.write(existingContent, indent: false)
-            }
-        }
-
-        // For create mode, check that file doesn't exist
-        if mode == .create && FileManager.default.fileExists(atPath: targetPath) {
-            throw MTLExecutionError.fileError("File already exists: \(targetPath)")
+        if mode == .append, let existingContent = resolvedCharset.read(atPath: targetPath) {
+            await writer.write(existingContent, indent: false)
         }
 
         // Store writer metadata
-        await storeWriterMetadata(writerId: writerId, path: targetPath, mode: mode)
+        await storeWriterMetadata(
+            writerId: writerId, path: targetPath, mode: mode, charset: resolvedCharset)
 
         return writer
     }
@@ -310,10 +334,17 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
         // Get the accumulated content
         let content = await writer.getContent()
         let mode = await getWriterMode(writerId)
+        let charset = await getWriterCharset(writerId)
+
+        // A create-mode file never replaces an existing file
+        if mode == .create && FileManager.default.fileExists(atPath: targetPath) {
+            await removeWriterMetadata(writerId: writerId)
+            return
+        }
 
         // Merge, redirect and post-process
         let existing: String? =
-            mode == .overwrite ? try? String(contentsOfFile: targetPath, encoding: .utf8) : nil
+            mode == .overwrite ? charset.read(atPath: targetPath) : nil
         let outcome = try await MTLOutputPreparation.prepare(
             path: targetPath,
             content: content,
@@ -336,8 +367,15 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
             }
 
             // Write to file
+            let data: Data
             do {
-                try outcome.content.write(toFile: outcome.path, atomically: true, encoding: .utf8)
+                data = try charset.encode(outcome.content, path: outcome.path)
+            } catch {
+                await removeWriterMetadata(writerId: writerId)
+                throw error
+            }
+            do {
+                try data.write(to: URL(fileURLWithPath: outcome.path), options: .atomic)
             } catch {
                 throw MTLExecutionError.fileError("Failed to write file \(outcome.path): \(error)")
             }
@@ -351,7 +389,16 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
     public func existingContent(url: String) async -> String? {
         let path = resolveFilePath(url)
         guard FileManager.default.fileExists(atPath: path) else { return nil }
-        return try? String(contentsOfFile: path, encoding: .utf8)
+        return MTLCharset.readDetecting(atPath: path)
+    }
+
+    @MainActor
+    public func fileExists(url: String) async -> Bool {
+        return FileManager.default.fileExists(atPath: resolveFilePath(url))
+    }
+
+    nonisolated public var generatorOptions: MTLGeneratorOptions {
+        options
     }
 
     // MARK: - Private Helpers
@@ -359,6 +406,10 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
     /// Retrieves the mode for a writer.
     private func getWriterMode(_ writerId: ObjectIdentifier) -> MTLOpenMode? {
         return writerModes[writerId]
+    }
+
+    private func getWriterCharset(_ writerId: ObjectIdentifier) -> MTLCharset {
+        return writerCharsets[writerId] ?? .utf8
     }
 
     /// Resolves a file URL against the base path.
@@ -373,9 +424,12 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
     }
 
     /// Stores metadata for a writer.
-    private func storeWriterMetadata(writerId: ObjectIdentifier, path: String, mode: MTLOpenMode) {
+    private func storeWriterMetadata(
+        writerId: ObjectIdentifier, path: String, mode: MTLOpenMode, charset: MTLCharset
+    ) {
         writerFiles[writerId] = path
         writerModes[writerId] = mode
+        writerCharsets[writerId] = charset
     }
 
     /// Retrieves the file path for a writer.
@@ -387,6 +441,7 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
     private func removeWriterMetadata(writerId: ObjectIdentifier) {
         writerFiles.removeValue(forKey: writerId)
         writerModes.removeValue(forKey: writerId)
+        writerCharsets.removeValue(forKey: writerId)
     }
 }
 
@@ -450,6 +505,9 @@ public actor MTLInMemoryStrategy: MTLGenerationStrategy {
     /// Mapping from writers to their file modes.
     private var writerModes: [ObjectIdentifier: MTLOpenMode] = [:]
 
+    /// The character set of each open writer.
+    private var writerCharsets: [ObjectIdentifier: MTLCharset] = [:]
+
     /// The options that control merging, redirection and line delimiters.
     private let options: MTLGeneratorOptions
 
@@ -497,6 +555,7 @@ public actor MTLInMemoryStrategy: MTLGenerationStrategy {
         charset: String,
         indentation: MTLIndentation
     ) async throws -> MTLWriter {
+        let resolvedCharset = try MTLCharset.resolve(charset)
         let writer = MTLWriter(indentation: indentation)
         let writerId = ObjectIdentifier(writer)
 
@@ -505,14 +564,8 @@ public actor MTLInMemoryStrategy: MTLGenerationStrategy {
             await writer.write(existingContent, indent: false)
         }
 
-        // For create mode, check that file doesn't exist
-        let exists = await fileExists(url)
-        if mode == .create && exists {
-            throw MTLExecutionError.fileError("File already exists: \(url)")
-        }
-
         // Store writer metadata
-        await storeWriterMetadata(writerId: writerId, path: url, mode: mode)
+        await storeWriterMetadata(writerId: writerId, path: url, mode: mode, charset: resolvedCharset)
 
         return writer
     }
@@ -527,9 +580,16 @@ public actor MTLInMemoryStrategy: MTLGenerationStrategy {
 
         // Get the accumulated content
         let content = await writer.getContent()
+        let mode = await getWriterMode(writerId)
+        let charset = await getWriterCharset(writerId)
+
+        // A create-mode file never replaces an existing file
+        if mode == .create, await fileExists(targetPath) {
+            await removeWriterMetadata(writerId: writerId)
+            return
+        }
 
         // Merge, redirect and post-process
-        let mode = await getWriterMode(writerId)
         let outcome = try await MTLOutputPreparation.prepare(
             path: targetPath,
             content: content,
@@ -540,8 +600,14 @@ public actor MTLInMemoryStrategy: MTLGenerationStrategy {
             postProcessors: postProcessors
         )
 
-        // Store in memory
+        // Store in memory, once the content is known to be representable
         if let outcome {
+            do {
+                _ = try charset.encode(outcome.content, path: outcome.path)
+            } catch {
+                await removeWriterMetadata(writerId: writerId)
+                throw error
+            }
             await storeFile(path: outcome.path, content: outcome.content)
         }
 
@@ -581,9 +647,12 @@ public actor MTLInMemoryStrategy: MTLGenerationStrategy {
     }
 
     /// Stores metadata for a writer.
-    private func storeWriterMetadata(writerId: ObjectIdentifier, path: String, mode: MTLOpenMode) {
+    private func storeWriterMetadata(
+        writerId: ObjectIdentifier, path: String, mode: MTLOpenMode, charset: MTLCharset
+    ) {
         writerFiles[writerId] = path
         writerModes[writerId] = mode
+        writerCharsets[writerId] = charset
     }
 
     /// Retrieves the mode for a writer.
@@ -591,9 +660,22 @@ public actor MTLInMemoryStrategy: MTLGenerationStrategy {
         return writerModes[writerId]
     }
 
+    private func getWriterCharset(_ writerId: ObjectIdentifier) -> MTLCharset {
+        return writerCharsets[writerId] ?? .utf8
+    }
+
     @MainActor
     public func existingContent(url: String) async -> String? {
         return await getFile(url)
+    }
+
+    @MainActor
+    public func fileExists(url: String) async -> Bool {
+        return await fileExists(url)
+    }
+
+    nonisolated public var generatorOptions: MTLGeneratorOptions {
+        options
     }
 
     /// Retrieves the file path for a writer.
@@ -605,5 +687,6 @@ public actor MTLInMemoryStrategy: MTLGenerationStrategy {
     private func removeWriterMetadata(writerId: ObjectIdentifier) {
         writerFiles.removeValue(forKey: writerId)
         writerModes.removeValue(forKey: writerId)
+        writerCharsets.removeValue(forKey: writerId)
     }
 }
