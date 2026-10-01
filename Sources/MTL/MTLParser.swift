@@ -84,6 +84,19 @@ struct MTLToken: Equatable {
 
 // MARK: - Lexer
 
+extension MTLSyntax {
+    /// The words that the MTL and AQL syntax reserve and that therefore cannot name a variable.
+    ///
+    /// This contains every keyword of the MTL lexer, the collection type names of AQL, and the
+    /// name of the implicit receiver variable. Use it to check the names of global variables
+    /// before binding them, since a reserved word cannot be read back with `[name/]`.
+    public static var reservedWords: Set<String> {
+        MTLLexer.keywords
+            .union(AQLBuiltInType.collections)
+            .union([selfVariable])
+    }
+}
+
 /// Lexer for MTL with dual-mode tokenization.
 ///
 /// The lexer operates in two modes:

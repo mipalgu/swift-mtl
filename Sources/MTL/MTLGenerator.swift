@@ -137,10 +137,13 @@ public final class MTLGenerator {
     ///     (default: none). Later providers take precedence over earlier ones; the
     ///     templates, queries and macros of the module always take precedence over
     ///     services of the same name.
+    ///   - globals: Global variables visible to every template, query and macro
+    ///     (default: none). See ``setGlobalVariable(_:value:)`` for the precedence rules.
     public init(
         module: MTLModule,
         generationStrategy: any MTLGenerationStrategy,
-        serviceProviders: [any AQLServiceProvider] = []
+        serviceProviders: [any AQLServiceProvider] = [],
+        globals: [String: (any EcoreValue)?] = [:]
     ) {
         self.module = module
         self.executionContext = MTLExecutionContext(
@@ -149,6 +152,31 @@ public final class MTLGenerator {
             serviceProviders: serviceProviders
         )
         self.statistics = MTLGenerationStatistics()
+        for (name, value) in globals {
+            executionContext.setGlobalVariable(name, value: value)
+        }
+    }
+
+    // MARK: - Global Variables
+
+    /// Sets a global variable that every template, query and macro can read.
+    ///
+    /// The variable is read as `[name/]` or inside any expression, like any other variable.
+    /// Call this before ``generate(mainTemplate:arguments:models:)``; setting a name again
+    /// replaces its value.
+    ///
+    /// ## Precedence
+    ///
+    /// A global variable shadows nothing: a template parameter or a `let` variable of the same
+    /// name hides the global inside its own scope, and the global is visible again outside it.
+    /// Templates, queries and macros of the module are invoked with parentheses and are
+    /// therefore never hidden by, and never hide, a global variable of the same name.
+    ///
+    /// - Parameters:
+    ///   - name: The variable name.
+    ///   - value: The value, or `nil` for a null value.
+    public func setGlobalVariable(_ name: String, value: (any EcoreValue)?) {
+        executionContext.setGlobalVariable(name, value: value)
     }
 
     // MARK: - Services

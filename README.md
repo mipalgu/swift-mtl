@@ -240,6 +240,22 @@ Every model passed to `generate(mainTemplate:arguments:models:)` or registered w
 and `allInstances()` can see its objects. Note that the AQL library counts strings and
 collections from one (`'hello'.substring(1, 2)`, `seq->at(1)`).
 
+### Global variables
+
+Global variables are visible to every template, query and macro, and are read like any other
+variable (`[name/]`). Set them before generating, either through the initialiser or with
+`setGlobalVariable(_:value:)`:
+
+```swift
+let generator = MTLGenerator(
+    module: module, generationStrategy: strategy, globals: ["version": "1.2"])
+generator.setGlobalVariable("author", value: "A. Person")
+```
+
+A global shadows nothing: a template parameter or `let` variable of the same name hides it
+inside its own scope only. Templates, queries and macros are invoked with parentheses, so they
+never clash with a global of the same name.
+
 ## Project Structure
 
 ```
