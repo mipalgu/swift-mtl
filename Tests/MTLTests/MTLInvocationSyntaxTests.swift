@@ -253,7 +253,7 @@ struct MTLInvocationSyntaxTests {
     func libraryMethods() async throws {
         let output = try await MTLTestSupport.output("""
             [module m('u')/]
-            [template main(s : String)][s.toUpperCase()/],[s.size()/],[s.substring(0, 2)/][/template]
+            [template main(s : String)][s.toUpperCase()/],[s.size()/],[s.substring(1, 2)/][/template]
             """, arguments: ["hello"])
         #expect(output == "HELLO,5,he")
     }

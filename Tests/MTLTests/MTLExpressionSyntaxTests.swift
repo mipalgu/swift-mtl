@@ -117,12 +117,11 @@ struct MTLExpressionSyntaxTests {
         #expect(try await Self.evaluate("2 + 7 mod 3 * 2") == "4")
     }
 
-    @Test("Div parses as an integer division call")
+    @Test("Div parses as an integer division operator")
     func divParses() async throws {
         let node = try await Self.expression("7 div 2")
-        let call = try #require(node as? AQLCallExpression)
-        #expect(call.methodName == "div")
-        #expect(call.arguments.count == 1)
+        let binary = try #require(node as? AQLBinaryExpression)
+        #expect(binary.op == .div)
     }
 
     @Test("Real literals are supported")
@@ -151,12 +150,17 @@ struct MTLExpressionSyntaxTests {
         #expect(try await Self.evaluate("'a'.oclIsUndefined()") == "false")
     }
 
-    @Test("Qualified names are kept as written")
+    @Test("Qualified names become type and enumeration literals")
     func qualifiedNames() async throws {
         let node = try await Self.expression("ecore::EClass")
-        #expect((node as? AQLVariableExpression)?.name == "ecore::EClass")
+        let type = try #require(node as? AQLTypeLiteralExpression)
+        #expect(type.packageName == "ecore")
+        #expect(type.typeName == "EClass")
         let enumeration = try await Self.expression("genmodel::GenProviderKind::Singleton")
-        #expect((enumeration as? AQLVariableExpression)?.name == "genmodel::GenProviderKind::Singleton")
+        let literal = try #require(enumeration as? AQLEnumLiteralExpression)
+        #expect(literal.packageName == "genmodel")
+        #expect(literal.enumName == "GenProviderKind")
+        #expect(literal.literal == "Singleton")
     }
 
     @Test("Qualified type names are passed to type operations")
@@ -165,7 +169,9 @@ struct MTLExpressionSyntaxTests {
             let node = try await Self.expression("self.\(operation)(ecore::EClass)")
             let call = try #require(node as? AQLCallExpression)
             #expect(call.methodName == operation)
-            #expect((call.arguments.first as? AQLVariableExpression)?.name == "ecore::EClass")
+            let type = try #require(call.arguments.first as? AQLTypeLiteralExpression)
+            #expect(type.packageName == "ecore")
+            #expect(type.typeName == "EClass")
         }
     }
 
@@ -209,9 +215,8 @@ struct MTLExpressionSyntaxTests {
     func lambdaArgument() async throws {
         let node = try await Self.expression("Sequence{1}->sortedBy(e : Integer | e)")
         let call = try #require(node as? AQLCallExpression)
-        let lambda = try #require(call.arguments.first as? MTLLambdaExpression)
-        #expect(lambda.iterator == "e")
-        #expect(lambda.iteratorType == "Integer")
+        let lambda = try #require(call.arguments.first as? AQLLambdaExpression)
+        #expect(lambda.iterators == ["e"])
     }
 
     @Test("The lambda parameter may have a type")
