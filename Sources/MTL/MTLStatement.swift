@@ -94,7 +94,11 @@ public struct MTLTextStatement: MTLStatement {
 
     @MainActor
     public func execute(in context: MTLExecutionContext) async throws {
-        await context.write(value)
+        if context.takeLineBreakAbsorption(), let first = value.first, first.isNewline {
+            await context.write(String(value.dropFirst()))
+        } else {
+            await context.write(value)
+        }
         if newLineNeeded {
             await context.writeLine()
         }
@@ -126,23 +130,44 @@ public struct MTLExpressionStatement: MTLStatement {
     /// Whether a newline should be added after the expression result.
     public let newLineNeeded: Bool
 
+    /// Whether the tag is directly followed by a line break in the template text.
+    ///
+    /// When it is, that line break is not duplicated if the result already ends a line, and it is
+    /// dropped if the result is empty and the tag starts a line, so that an invocation on a line
+    /// of its own neither adds blank lines nor forces authors to omit trailing line breaks.
+    public let followedByLineBreak: Bool
+
     /// Creates a new expression statement.
     ///
     /// - Parameters:
     ///   - expression: The expression to evaluate
     ///   - multiLines: Whether this expression spans multiple lines (default: false)
     ///   - newLineNeeded: Whether to add a newline after the result (default: false)
-    public init(expression: MTLExpression, multiLines: Bool = false, newLineNeeded: Bool = false) {
+    ///   - followedByLineBreak: Whether a line break in the template text follows the tag
+    ///     directly (default: false)
+    public init(
+        expression: MTLExpression, multiLines: Bool = false, newLineNeeded: Bool = false,
+        followedByLineBreak: Bool = false
+    ) {
         self.expression = expression
         self.multiLines = multiLines
         self.newLineNeeded = newLineNeeded
+        self.followedByLineBreak = followedByLineBreak
     }
 
     @MainActor
     public func execute(in context: MTLExecutionContext) async throws {
         let result = try await expression.evaluate(in: context)
+        var producedText = ""
         if let result = result {
+            producedText = context.renderedText(of: result)
             await context.writeExpressionResult(result)
+        }
+        if followedByLineBreak {
+            let endsLine = producedText.last?.isNewline == true
+            var absorbs = endsLine
+            if producedText.isEmpty, !(await context.isMidLine) { absorbs = true }
+            context.absorbNextLineBreak(absorbs)
         }
         if newLineNeeded {
             await context.writeLine()

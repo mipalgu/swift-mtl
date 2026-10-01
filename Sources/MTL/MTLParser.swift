@@ -1019,7 +1019,7 @@ private actor MTLSyntaxParser {
             advance()
             let expr = try parseExpression()
             try expect(.rightBracket)
-            return MTLExpressionStatement(expression: expr)
+            return MTLExpressionStatement(expression: expr, followedByLineBreak: nextTextStartsWithLineBreak())
 
         default:
             if let invocation = try parseMacroInvocationWithBody() {
@@ -1040,7 +1040,15 @@ private actor MTLSyntaxParser {
         }
 
         try expect(.rightBracket)
-        return MTLExpressionStatement(expression: expr)
+        return MTLExpressionStatement(expression: expr, followedByLineBreak: nextTextStartsWithLineBreak())
+    }
+
+    /// Whether the next token is text that begins with a line break.
+    private func nextTextStartsWithLineBreak() -> Bool {
+        if case .text(let text) = current()?.type, let first = text.first {
+            return first.isNewline
+        }
+        return false
     }
 
     // MARK: - Expression Parsing

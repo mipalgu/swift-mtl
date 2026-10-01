@@ -143,6 +143,9 @@ public final class MTLExecutionContext: Sendable {
     /// entry that is removed when the file closes.
     private var deferredStates: [MTLDeferredState] = [MTLDeferredState()]
 
+    /// Whether the line break that starts the next text statement is to be dropped.
+    private var absorbsNextLineBreak = false
+
     /// Whether emit blocks are currently being rendered.
     private var isRenderingDeferred = false
 
@@ -421,6 +424,29 @@ public final class MTLExecutionContext: Sendable {
         guard let currentWriter = writerStack.last else { return }
         await synchroniseIndentation(of: currentWriter)
         await currentWriter.writeLine(text, indent: indent)
+    }
+
+    /// Records whether the next text statement drops the line break it starts with.
+    ///
+    /// - Parameter absorbs: `true` to drop that line break
+    func absorbNextLineBreak(_ absorbs: Bool) {
+        absorbsNextLineBreak = absorbs
+    }
+
+    /// Reports and clears a pending line break absorption.
+    ///
+    /// - Returns: `true` if the text statement being executed drops a leading line break
+    func takeLineBreakAbsorption() -> Bool {
+        defer { absorbsNextLineBreak = false }
+        return absorbsNextLineBreak
+    }
+
+    /// Whether the current output has text on its last line.
+    var isMidLine: Bool {
+        get async {
+            guard let text = await writerStack.last?.getContent() else { return false }
+            return !(text.isEmpty || text.last?.isNewline == true)
+        }
     }
 
     // MARK: - File Management
