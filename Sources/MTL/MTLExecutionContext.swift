@@ -132,6 +132,9 @@ public final class MTLExecutionContext: Sendable {
     /// and closing files pops them.
     private var writerStack: [MTLWriter] = []
 
+    /// The indentation level that was current when each writer of ``writerStack`` was pushed.
+    private var writerBaseLevels: [Int] = [0]
+
     // MARK: Deferred Blocks
 
     /// The collected sets and pending emit blocks, one entry per open output.
@@ -184,11 +187,14 @@ public final class MTLExecutionContext: Sendable {
     ///   - generationStrategy: The output strategy for generated text
     ///   - aqlContext: Optional AQL context (default: creates new one)
     ///   - protectedAreaManager: Optional protected area manager for preserving user code
+    ///   - serviceProviders: AQL service providers to register (default: none). Later
+    ///     providers take precedence over earlier ones. See ``register(_:)``.
     public init(
         module: MTLModule,
         generationStrategy: any MTLGenerationStrategy,
         aqlContext: AQLExecutionContext? = nil,
-        protectedAreaManager: MTLProtectedAreaManager? = nil
+        protectedAreaManager: MTLProtectedAreaManager? = nil,
+        serviceProviders: [any AQLServiceProvider] = []
     ) {
         self.module = module
         self.generationStrategy = generationStrategy
@@ -210,6 +216,25 @@ public final class MTLExecutionContext: Sendable {
             MTLSyntax.runtimeContextVariable,
             value: MTLRuntimeHandle(runtime: self)
         )
+
+        for provider in serviceProviders {
+            self.aqlContext.register(provider)
+        }
+    }
+
+    // MARK: - Services
+
+    /// Registers a provider of AQL services for use in expressions.
+    ///
+    /// The services of the provider can be called from templates as
+    /// `receiver.name(args)`, `receiver->name(args)` and `name(args)`. Templates,
+    /// queries and macros of the module (and of its parents and imports) always take
+    /// precedence over services of the same name and arity; services take precedence over
+    /// the AQL standard library, and later registrations over earlier ones.
+    ///
+    /// - Parameter provider: The provider whose services become available.
+    public func register(_ provider: some AQLServiceProvider) {
+        aqlContext.register(provider)
     }
 
     // MARK: - Variable Management
@@ -295,17 +320,11 @@ public final class MTLExecutionContext: Sendable {
     /// Pushes a new indentation level onto the stack.
     ///
     /// The current indentation is incremented and becomes the new current
-    /// indentation. This is typically called when entering a block.
+    /// indentation. This is typically called when entering a block. The new
+    /// level applies to every line that is started in the current output
+    /// from now on, deterministically and relative to where the output began.
     public func pushIndentation() {
-        let newIndent = currentIndentation.increment()
-        indentationStack.append(newIndent)
-
-        // Update all writers with new indentation
-        for writer in writerStack {
-            Task {
-                await writer.setIndentation(newIndent)
-            }
-        }
+        indentationStack.append(currentIndentation.increment())
     }
 
     /// Pops the current indentation level from the stack.
@@ -316,21 +335,32 @@ public final class MTLExecutionContext: Sendable {
     public func popIndentation() {
         guard indentationStack.count > 1 else { return }
         indentationStack.removeLast()
-
-        // Update all writers with restored indentation
-        let currentIndent = currentIndentation
-        for writer in writerStack {
-            Task {
-                await writer.setIndentation(currentIndent)
-            }
-        }
     }
 
     /// Returns the current indentation level.
     ///
-    /// This is the indentation that will be applied to new lines of text.
+    /// This is the indentation level of the innermost block that is being
+    /// executed, counted from the start of the whole generation.
     public var currentIndentation: MTLIndentation {
         return indentationStack.last ?? MTLIndentation()
+    }
+
+    /// The indentation that new lines of the current output receive.
+    ///
+    /// Output that is captured or written to a file starts at no indentation
+    /// when it is opened, so the levels that were already open at that point do not
+    /// count towards it.
+    private var effectiveIndentation: MTLIndentation {
+        let current = currentIndentation
+        let base = writerBaseLevels.last ?? 0
+        return MTLIndentation(level: max(0, current.level - base), indentString: current.indentString)
+    }
+
+    /// Hands the current writer the indentation that applies right now.
+    ///
+    /// - Parameter writer: The writer that is about to receive text.
+    private func synchroniseIndentation(of writer: MTLWriter) async {
+        await writer.setIndentation(effectiveIndentation)
     }
 
     // MARK: - Writer Management (Internal)
@@ -341,7 +371,7 @@ public final class MTLExecutionContext: Sendable {
     ///
     /// - Parameter writer: The writer to push
     func pushWriter(_ writer: MTLWriter) async {
-        writerStack.append(writer)
+        appendWriter(writer)
     }
 
     /// Pops the top writer from the stack (internal use).
@@ -350,6 +380,19 @@ public final class MTLExecutionContext: Sendable {
     @discardableResult
     func popWriter() async -> MTLWriter? {
         guard writerStack.count > 1 else { return nil }
+        return removeLastWriter()
+    }
+
+    /// Pushes a writer and remembers the indentation level at which it starts.
+    private func appendWriter(_ writer: MTLWriter) {
+        writerStack.append(writer)
+        writerBaseLevels.append(currentIndentation.level)
+    }
+
+    /// Removes the innermost writer and returns it.
+    @discardableResult
+    private func removeLastWriter() -> MTLWriter {
+        writerBaseLevels.removeLast()
         return writerStack.removeLast()
     }
 
@@ -365,6 +408,7 @@ public final class MTLExecutionContext: Sendable {
     ///   - indent: Whether to apply indentation if at line start (default: true)
     public func write(_ text: String, indent: Bool = true) async {
         guard let currentWriter = writerStack.last else { return }
+        await synchroniseIndentation(of: currentWriter)
         await currentWriter.write(text, indent: indent)
     }
 
@@ -375,6 +419,7 @@ public final class MTLExecutionContext: Sendable {
     ///   - indent: Whether to apply indentation (default: true)
     public func writeLine(_ text: String = "", indent: Bool = true) async {
         guard let currentWriter = writerStack.last else { return }
+        await synchroniseIndentation(of: currentWriter)
         await currentWriter.writeLine(text, indent: indent)
     }
 
@@ -396,7 +441,7 @@ public final class MTLExecutionContext: Sendable {
             url: url,
             mode: mode,
             charset: charset,
-            indentation: currentIndentation
+            indentation: MTLIndentation()
         )
 
         // Preserve the protected areas of a file that is about to be overwritten
@@ -407,7 +452,7 @@ public final class MTLExecutionContext: Sendable {
         }
 
         switchCollectedVariables(from: deferredStates.last, to: state)
-        writerStack.append(newWriter)
+        appendWriter(newWriter)
         deferredStates.append(state)
     }
 
@@ -422,7 +467,7 @@ public final class MTLExecutionContext: Sendable {
             throw MTLExecutionError.fileError("No file is currently open")
         }
 
-        let fileWriter = writerStack.removeLast()
+        let fileWriter = removeLastWriter()
         let state = deferredStates.count > 1 ? deferredStates.removeLast() : MTLDeferredState()
 
         var regions: [MTLEmittedRegion] = []
@@ -614,14 +659,14 @@ public final class MTLExecutionContext: Sendable {
             setVariable(MTLDeferredBlockNames.itemsVariable, value: visibleCollection)
 
             let writer = MTLWriter()
-            writerStack.append(writer)
+            appendWriter(writer)
             do {
                 try await emit.statement.body.execute(in: self)
             } catch {
-                writerStack.removeLast()
+                removeLastWriter()
                 throw error
             }
-            writerStack.removeLast()
+            removeLastWriter()
             output += Self.indentContinuationLines(await writer.getContent(), by: indentation)
 
             if index < iterations.count - 1, let separator = emit.statement.separator,
@@ -733,11 +778,15 @@ public final class MTLExecutionContext: Sendable {
     /// Common aliases include "IN" for the primary input model and "LIB" for
     /// library models.
     ///
+    /// The resource is also made known to the expression evaluator, so that whole-model
+    /// services such as `eContainer()` and `allInstances()` can see its objects.
+    ///
     /// - Parameters:
     ///   - alias: The model alias used in templates
     ///   - resource: The model resource
     public func registerModel(_ alias: String, resource: Resource) async {
         models[alias] = resource
+        aqlContext.addResource(resource)
 
         // Register resource with AQL execution engine for UUID resolution
         await aqlContext.executionEngine.registerResource(resource, alias: alias)

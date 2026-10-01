@@ -154,7 +154,7 @@ public actor MTLWriter {
     ///
     /// This is equivalent to calling `write(text, indent: indent)` followed
     /// by `newLine(indent: false)`. The text is written with optional indentation,
-    /// then a newline is appended.
+    /// then a newline is appended. Blank lines carry no indentation.
     ///
     /// - Parameters:
     ///   - text: The text to write (default: empty string)
@@ -172,9 +172,6 @@ public actor MTLWriter {
     public func writeLine(_ text: String = "", indent: Bool = true) {
         if !text.isEmpty {
             write(text, indent: indent)
-        } else if atLineStart && indent {
-            // For blank lines, write indentation only if at line start
-            buffer.append(indentation.asString)
         }
         buffer.append("\n")
         atLineStart = true

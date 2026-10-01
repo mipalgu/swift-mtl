@@ -6,6 +6,7 @@
 //  Copyright (c) 2025 Rene Hexel. All rights reserved.
 //
 
+import AQL
 import ECore
 import EMFBase
 import Foundation
@@ -132,13 +133,37 @@ public final class MTLGenerator {
     /// - Parameters:
     ///   - module: The MTL module to execute
     ///   - generationStrategy: The output strategy for generated text
-    public init(module: MTLModule, generationStrategy: any MTLGenerationStrategy) {
+    ///   - serviceProviders: AQL service providers made available to the templates
+    ///     (default: none). Later providers take precedence over earlier ones; the
+    ///     templates, queries and macros of the module always take precedence over
+    ///     services of the same name.
+    public init(
+        module: MTLModule,
+        generationStrategy: any MTLGenerationStrategy,
+        serviceProviders: [any AQLServiceProvider] = []
+    ) {
         self.module = module
         self.executionContext = MTLExecutionContext(
             module: module,
-            generationStrategy: generationStrategy
+            generationStrategy: generationStrategy,
+            serviceProviders: serviceProviders
         )
         self.statistics = MTLGenerationStatistics()
+    }
+
+    // MARK: - Services
+
+    /// Registers a provider of AQL services for use in the templates.
+    ///
+    /// Call this before ``generate(mainTemplate:arguments:models:)``. The services can be
+    /// called as `receiver.name(args)`, `receiver->name(args)` and `name(args)`. Templates,
+    /// queries and macros of the module take precedence over services of the same name and
+    /// arity, services take precedence over the AQL standard library, and later registrations
+    /// over earlier ones.
+    ///
+    /// - Parameter provider: The provider whose services become available.
+    public func register(_ provider: some AQLServiceProvider) {
+        executionContext.register(provider)
     }
 
     // MARK: - Debug Control

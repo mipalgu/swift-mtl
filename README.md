@@ -181,6 +181,34 @@ values that transform the content before it is written. Existing `[protected]`
 areas are preserved automatically when a file is regenerated.
 
 
+### AQL services
+
+Operations written as `receiver.name(args)`, `receiver->name(args)` and `name(args)` are
+resolved against the templates, queries and macros of the module first, then against
+registered AQL services, and finally against the AQL standard library. Register additional
+services through the generator or the execution context:
+
+```swift
+import AQL
+
+struct GreetingServices: AQLServiceProvider {
+    var services: [AQLService] {
+        [AQLService("greet", receiver: .string, arity: 1) { call in
+            "\(try call.string(0)), \(try call.receiverString())"
+        }]
+    }
+}
+
+let generator = MTLGenerator(
+    module: module, generationStrategy: strategy, serviceProviders: [GreetingServices()])
+generator.register(GreetingServices())  // later registrations take precedence
+```
+
+Every model passed to `generate(mainTemplate:arguments:models:)` or registered with
+`MTLExecutionContext.registerModel(_:resource:)` is also made known to AQL, so `eContainer()`
+and `allInstances()` can see its objects. Note that the AQL library counts strings and
+collections from one (`'hello'.substring(1, 2)`, `seq->at(1)`).
+
 ## Project Structure
 
 ```
