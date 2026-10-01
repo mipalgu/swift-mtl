@@ -86,6 +86,17 @@ public actor MTLWriter {
     ///   actor since MTLIndentation is a Sendable value type.
     public var indentation: MTLIndentation
 
+    /// The tagged-block merge configuration to apply when this writer's file is stored.
+    ///
+    /// Set when the file is closed; `nil` if the module declares no merge.
+    public private(set) var mergeConfiguration: MTLMergeConfiguration?
+
+    /// The regions of the content that were produced by `[emit]` blocks.
+    ///
+    /// Set when the file is closed; used to union collected sets with those
+    /// of an existing file.
+    public private(set) var emittedRegions: [MTLEmittedRegion] = []
+
     // MARK: - Initialisation
 
     /// Creates a new writer with the specified initial indentation.
@@ -219,6 +230,29 @@ public actor MTLWriter {
     /// ```
     public func getContent() -> String {
         return buffer
+    }
+
+    /// Replaces the whole buffer with the given text.
+    ///
+    /// The writer is at the start of a line afterwards if the text is empty or
+    /// ends with a newline.
+    ///
+    /// - Parameter text: The new content of the buffer.
+    public func replaceContent(_ text: String) {
+        buffer = text
+        atLineStart = text.isEmpty || text.hasSuffix("\n")
+    }
+
+    /// Records how the content is to be merged when it is stored.
+    ///
+    /// - Parameters:
+    ///   - mergeConfiguration: The merge configuration, or `nil` for none.
+    ///   - emittedRegions: The regions of the content produced by emit blocks.
+    public func setGenerationInfo(
+        mergeConfiguration: MTLMergeConfiguration?, emittedRegions: [MTLEmittedRegion]
+    ) {
+        self.mergeConfiguration = mergeConfiguration
+        self.emittedRegions = emittedRegions
     }
 
     /// Clears the buffer and resets the writer state.

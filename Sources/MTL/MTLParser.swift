@@ -111,6 +111,9 @@ private actor MTLLexer {
         // File operations
         "file",
 
+        // Generation facilities (see MTLGenerationKeywords)
+        MTLGenerationKeywords.emit, MTLGenerationKeywords.merge,
+
         // Protected areas
         "protected",
 
@@ -616,6 +619,7 @@ private actor MTLSyntaxParser {
         var macros: OrderedDictionary<String, MTLMacro> = [:]
         var imports: [String] = []
         var extendsModule: String? = nil
+        var mergeConfiguration: MTLMergeConfiguration? = nil
 
         // Parse top-level declarations
         while let token = current(), token.type != .eof {
@@ -663,6 +667,11 @@ private actor MTLSyntaxParser {
                     advance()  // Consume 'extends' keyword
                     extendsModule = try parseExtends()
 
+                case .keyword(MTLGenerationKeywords.merge):
+                    advance()  // Consume 'merge' keyword
+                    if mergeConfiguration != nil { throw error("Duplicate merge declaration") }
+                    mergeConfiguration = try parseMergeDeclaration()
+
                 case .comment:
                     // Skip comments
                     advance()
@@ -692,7 +701,8 @@ private actor MTLSyntaxParser {
             templates: templates,
             queries: queries,
             macros: macros,
-            encoding: "UTF-8"
+            encoding: "UTF-8",
+            mergeConfiguration: mergeConfiguration
         )
 
         debugPrint("Module parsing complete: \(templates.count) templates, \(queries.count) queries, \(macros.count) macros")
@@ -911,6 +921,12 @@ private actor MTLSyntaxParser {
             case "protected":
                 advance()  // Consume the keyword
                 return try parseProtectedArea()
+            case MTLGenerationKeywords.collect:
+                advance()  // Consume the keyword
+                return try parseCollectStatement()
+            case MTLGenerationKeywords.emit:
+                advance()  // Consume the keyword
+                return try parseEmitStatement()
             default:
                 // Not a statement keyword, treat as expression
                 let expr = try parseExpression()
@@ -1263,6 +1279,7 @@ private actor MTLSyntaxParser {
 
         // Variable or keyword used as variable
         case .identifier(let name):
+            if let collected = try parseCollectedExpression(named: name) { return collected }
             advance()
             return MTLExpression(AQLVariableExpression(name: name))
 
@@ -1863,5 +1880,146 @@ private actor MTLSyntaxParser {
         if enableDebugging {
             print("[MTLSyntaxParser] \(message)")
         }
+    }
+}
+
+// MARK: - Generation Facilities Parsing
+
+/// Parsing of the deferred blocks and the merge declaration.
+extension MTLSyntaxParser {
+
+    /// Parses `[collect ('set', expression)/]`; the `collect` keyword is already consumed.
+    fileprivate func parseCollectStatement() throws -> MTLCollectStatement {
+        try expect(.leftParen)
+        let setName = try parseExpression()
+        try expect(.comma)
+        let value = try parseExpression()
+        try expect(.rightParen)
+        if current()?.type == .slash { advance() }
+        try expect(.rightBracket)
+        return MTLCollectStatement(setName: setName, value: value)
+    }
+
+    /// Parses `[emit ('set') in(expr) separator(expr) once]...[/emit]`; the `emit` keyword is
+    /// already consumed.
+    fileprivate func parseEmitStatement() throws -> MTLEmitStatement {
+        try expect(.leftParen)
+        let setName = try parseExpression()
+        try expect(.rightParen)
+
+        var separator: MTLExpression? = nil
+        var order: MTLExpression? = nil
+        var rendersOnce = false
+        clauses: while true {
+            switch current()?.type {
+            case .keyword(MTLGenerationKeywords.separator):
+                advance()
+                try expect(.leftParen)
+                separator = try parseExpression()
+                try expect(.rightParen)
+            case .keyword("in"):
+                advance()
+                try expect(.leftParen)
+                order = try parseExpression()
+                try expect(.rightParen)
+            case .identifier(MTLGenerationKeywords.once):
+                advance()
+                rendersOnce = true
+            default:
+                break clauses
+            }
+        }
+        try expect(.rightBracket)
+
+        let block = try parseBlock(until: ["/\(MTLGenerationKeywords.emit)"])
+        try expect(.slash)
+        try expectKeyword(MTLGenerationKeywords.emit)
+        try expect(.rightBracket)
+
+        return MTLEmitStatement(
+            setName: setName, separator: separator, order: order, rendersOnce: rendersOnce,
+            body: MTLBlock(statements: block.statements, inlined: true))
+    }
+
+    /// Parses `collected('set')` when the identifier names it; otherwise returns nil and consumes nothing.
+    fileprivate func parseCollectedExpression(named name: String) throws -> MTLExpression? {
+        guard name == MTLDeferredBlockNames.collectedFunction, peek()?.type == .leftParen else {
+            return nil
+        }
+        advance()  // Consume the name
+        advance()  // Consume '('
+        let setName = try parseExpression()
+        try expect(.rightParen)
+        return MTLExpression(MTLCollectedExpression(setName: setName.aqlExpression))
+    }
+
+    /// Parses `[merge (start, end, generatedTag, keepTag, strategy, options...)/]`;
+    /// the `merge` keyword is already consumed.
+    fileprivate func parseMergeDeclaration() throws -> MTLMergeConfiguration {
+        try expect(.leftParen)
+        var arguments: [String] = []
+        while true {
+            guard case .stringLiteral(let value) = current()?.type else {
+                throw error("Expected a string literal in merge declaration")
+            }
+            arguments.append(value)
+            advance()
+            if current()?.type == .comma {
+                advance()
+            } else {
+                break
+            }
+        }
+        try expect(.rightParen)
+        if current()?.type == .slash { advance() }
+        try expect(.rightBracket)
+
+        let required = 4
+        guard arguments.count >= required else {
+            throw error(
+                "A merge declaration needs a comment start, a comment end, a generated tag and a keep tag"
+            )
+        }
+        var strategy = MTLMergeStrategy.braces
+        var optionStart = required
+        if arguments.count > required, let named = MTLMergeStrategy(rawValue: arguments[required]) {
+            strategy = named
+            optionStart = required + 1
+        } else if arguments.count > required, !arguments[required].contains(MTLMergeOptionKeys.assignment) {
+            throw error("Unknown merge strategy '\(arguments[required])'")
+        }
+
+        var syntax = MTLMergeSyntax.defaults(for: strategy)
+        for option in arguments[optionStart...] {
+            guard let separator = option.firstIndex(of: MTLMergeOptionKeys.assignment) else {
+                throw error("Expected key=value merge option, got '\(option)'")
+            }
+            let key = String(option[..<separator])
+            let value = String(option[option.index(after: separator)...])
+            switch key {
+            case MTLMergeOptionKeys.lineComments:
+                syntax.lineComments = value.split(separator: " ").map(String.init)
+            case MTLMergeOptionKeys.blockComment:
+                let parts = value.split(separator: " ").map(String.init)
+                guard parts.count == 2 else {
+                    throw error("A block comment option needs a start and an end delimiter")
+                }
+                syntax.blockComments = [MTLMergeSyntax.BlockComment(start: parts[0], end: parts[1])]
+            case MTLMergeOptionKeys.quotes:
+                syntax.quotes = Array(value)
+            case MTLMergeOptionKeys.terminators:
+                syntax.terminators = Array(value)
+            case MTLMergeOptionKeys.opener:
+                guard let opener = value.first, value.count == 1 else {
+                    throw error("The opener option needs a single character")
+                }
+                syntax.opener = opener
+            default:
+                throw error("Unknown merge option '\(key)'")
+            }
+        }
+        return MTLMergeConfiguration(
+            commentStart: arguments[0], commentEnd: arguments[1], generatedTag: arguments[2],
+            keepTag: arguments[3], strategy: strategy, syntax: syntax)
     }
 }

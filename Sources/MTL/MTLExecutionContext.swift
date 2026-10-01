@@ -126,6 +126,17 @@ public final class MTLExecutionContext: Sendable {
     /// and closing files pops them.
     private var writerStack: [MTLWriter] = []
 
+    // MARK: Deferred Blocks
+
+    /// The collected sets and pending emit blocks, one entry per open output.
+    ///
+    /// The first entry belongs to the main output; each open file adds an
+    /// entry that is removed when the file closes.
+    private var deferredStates: [MTLDeferredState] = [MTLDeferredState()]
+
+    /// Whether emit blocks are currently being rendered.
+    private var isRenderingDeferred = false
+
     // MARK: Protected Areas
 
     /// Manager for protected area content preservation.
@@ -373,7 +384,17 @@ public final class MTLExecutionContext: Sendable {
             charset: charset,
             indentation: currentIndentation
         )
+
+        // Preserve the protected areas of a file that is about to be overwritten
+        var state = MTLDeferredState()
+        if mode == .overwrite, let existing = await generationStrategy.existingContent(url: url) {
+            state.protectedAreasBeforeScan = await protectedAreaManager.getAllContent()
+            await protectedAreaManager.scanContent(existing)
+        }
+
+        switchCollectedVariables(from: deferredStates.last, to: state)
         writerStack.append(newWriter)
+        deferredStates.append(state)
     }
 
     /// Closes the current file, finalizing its content and popping its writer.
@@ -388,7 +409,236 @@ public final class MTLExecutionContext: Sendable {
         }
 
         let fileWriter = writerStack.removeLast()
+        let state = deferredStates.count > 1 ? deferredStates.removeLast() : MTLDeferredState()
+
+        var regions: [MTLEmittedRegion] = []
+        if !state.emits.isEmpty {
+            let content = await fileWriter.getContent()
+            let (resolved, emitted) = try await resolveDeferredBlocks(in: content, state: state)
+            await fileWriter.replaceContent(resolved)
+            regions = emitted
+        }
+        await fileWriter.setGenerationInfo(
+            mergeConfiguration: module.mergeConfiguration, emittedRegions: regions)
+
+        // Forget the protected areas scanned from this file's previous version
+        if let before = state.protectedAreasBeforeScan {
+            await protectedAreaManager.clear()
+            for (id, area) in before {
+                await protectedAreaManager.setContent(
+                    id, content: area.content, markers: (area.startMarker, area.endMarker))
+            }
+        }
+        switchCollectedVariables(from: state, to: deferredStates.last)
+
         try await generationStrategy.finalizeWriter(fileWriter)
+    }
+
+    // MARK: - Deferred Blocks
+
+    /// Adds values to a collected set of the current output.
+    ///
+    /// Values are appended in order; values already in the set are ignored.
+    ///
+    /// - Parameters:
+    ///   - values: The values to add
+    ///   - name: The name of the set
+    public func collect(_ values: [String], into name: String) {
+        guard !deferredStates.isEmpty else { return }
+        let last = deferredStates.count - 1
+        for value in values {
+            deferredStates[last].sets[name, default: []].append(value)
+        }
+        mirrorCollectedSet(name)
+    }
+
+    /// Returns the values collected so far for the current output.
+    ///
+    /// - Parameter name: The name of the set
+    /// - Returns: The values in insertion order, empty if nothing was collected
+    public func collectedValues(_ name: String) -> [String] {
+        guard let set = deferredStates.last?.sets[name] else { return [] }
+        return Array(set)
+    }
+
+    /// Writes a placeholder for an emit block into the current output.
+    ///
+    /// The placeholder is replaced with the rendered block when the file closes.
+    ///
+    /// - Parameters:
+    ///   - statement: The emit statement
+    ///   - setName: The name of the set to render
+    /// - Throws: `MTLExecutionError.invalidOperation` if called while an emit block is rendering
+    func registerEmit(_ statement: MTLEmitStatement, setName: String) async throws {
+        guard !isRenderingDeferred else {
+            throw MTLExecutionError.invalidOperation("Emit blocks cannot be nested")
+        }
+        var visible: [String: (any EcoreValue)?] = [:]
+        for scope in scopeStack {
+            visible.merge(scope) { _, new in new }
+        }
+        visible.merge(variables) { _, new in new }
+
+        let last = deferredStates.count - 1
+        let identifier = deferredStates[last].nextEmitIdentifier
+        deferredStates[last].nextEmitIdentifier += 1
+        deferredStates[last].emits[identifier] = MTLDeferredEmit(
+            statement: statement, setName: setName, variables: visible)
+        await write(MTLDeferredState.placeholder(for: identifier))
+    }
+
+    /// Mirrors a collected set into a hidden variable that `collected(...)` reads.
+    private func mirrorCollectedSet(_ name: String) {
+        let values: [any EcoreValue] = deferredStates.last?.sets[name].map { Array($0) } ?? []
+        aqlContext.setVariable(
+            MTLDeferredBlockNames.collectedVariablePrefix + name, value: EcoreValueArray(values))
+    }
+
+    /// Re-targets the hidden collected-set variables when the current output changes.
+    private func switchCollectedVariables(
+        from old: MTLDeferredState?, to new: MTLDeferredState?
+    ) {
+        for name in old?.sets.keys ?? [] {
+            aqlContext.setVariable(
+                MTLDeferredBlockNames.collectedVariablePrefix + name,
+                value: EcoreValueArray([]))
+        }
+        for (name, set) in new?.sets ?? [:] {
+            let values: [any EcoreValue] = Array(set)
+            aqlContext.setVariable(
+                MTLDeferredBlockNames.collectedVariablePrefix + name,
+                value: EcoreValueArray(values))
+        }
+    }
+
+    /// Replaces the placeholders in a buffer with the rendered emit blocks.
+    ///
+    /// - Parameters:
+    ///   - content: The buffer content
+    ///   - state: The deferred state that owns the placeholders
+    /// - Returns: The resolved content and the regions the emit blocks occupy
+    /// - Throws: Any error raised while rendering a block
+    private func resolveDeferredBlocks(in content: String, state: MTLDeferredState) async throws
+        -> (String, [MTLEmittedRegion])
+    {
+        var output = ""
+        var regions: [MTLEmittedRegion] = []
+        var remainder = Substring(content)
+        while let open = remainder.firstIndex(of: MTLDeferredBlockNames.placeholderOpen) {
+            output += remainder[..<open]
+            let afterOpen = remainder.index(after: open)
+            guard
+                let close = remainder[afterOpen...].firstIndex(
+                    of: MTLDeferredBlockNames.placeholderClose),
+                let identifier = Int(remainder[afterOpen..<close]),
+                let emit = state.emits[identifier]
+            else {
+                output.append(remainder[open])
+                remainder = remainder[afterOpen...]
+                continue
+            }
+            let lineIndent = Self.leadingWhitespace(ofLineEndingAt: output)
+            let rendered = try await render(emit, state: state, indentation: lineIndent)
+            let firstLine = output.reduce(0) { $0 + ($1 == "\n" ? 1 : 0) }
+            var lineCount = rendered.isEmpty ? 0 : rendered.split(
+                separator: "\n", omittingEmptySubsequences: false).count
+            if rendered.hasSuffix("\n") { lineCount -= 1 }
+            regions.append(
+                MTLEmittedRegion(name: emit.setName, firstLine: firstLine, lineCount: lineCount))
+            output += rendered
+            remainder = remainder[remainder.index(after: close)...]
+        }
+        output += remainder
+        return (output, regions)
+    }
+
+    /// Renders one emit block for every element of its set.
+    private func render(
+        _ emit: MTLDeferredEmit, state: MTLDeferredState, indentation: String
+    ) async throws -> String {
+        guard let set = state.sets[emit.setName], !set.isEmpty else { return "" }
+        let values: [any EcoreValue] = Array(set)
+        let collection = EcoreValueArray(values)
+
+        let savedVariables = variables
+        let savedScopes = scopeStack
+        let savedIndentation = indentationStack
+        var savedVisible: [String: (any EcoreValue)?] = [:]
+        for scope in savedScopes { savedVisible.merge(scope) { _, new in new } }
+        savedVisible.merge(savedVariables) { _, new in new }
+        isRenderingDeferred = true
+        defer {
+            isRenderingDeferred = false
+            variables = savedVariables
+            scopeStack = savedScopes
+            indentationStack = savedIndentation
+            for (name, value) in savedVisible { aqlContext.setVariable(name, value: value) }
+        }
+
+        variables = [:]
+        scopeStack = []
+        indentationStack = [MTLIndentation()]
+        for (name, value) in emit.variables { setVariable(name, value: value) }
+
+        // Resolve the elements to render, in the order the template asks for
+        var elements = values
+        var visibleCollection = collection
+        if let order = emit.statement.order {
+            pushScope()
+            defer { popScope() }
+            setVariable(MTLDeferredBlockNames.itemsVariable, value: collection)
+            elements = MTLDeferredSupport.values(from: try await order.evaluate(in: self))
+            visibleCollection = EcoreValueArray(elements)
+        }
+
+        var output = ""
+        let iterations: [(any EcoreValue)?] = emit.statement.rendersOnce ? [nil] : elements
+        for (index, value) in iterations.enumerated() {
+            pushScope()
+            defer { popScope() }
+            if let value { setVariable(MTLDeferredBlockNames.itemVariable, value: value) }
+            setVariable(MTLDeferredBlockNames.itemsVariable, value: visibleCollection)
+
+            let writer = MTLWriter()
+            writerStack.append(writer)
+            do {
+                try await emit.statement.body.execute(in: self)
+            } catch {
+                writerStack.removeLast()
+                throw error
+            }
+            writerStack.removeLast()
+            output += Self.indentContinuationLines(await writer.getContent(), by: indentation)
+
+            if index < iterations.count - 1, let separator = emit.statement.separator,
+                let text = try await separator.evaluate(in: self)
+            {
+                output += Self.indentContinuationLines("\(text)", by: indentation)
+            }
+        }
+        return output
+    }
+
+    /// The leading whitespace of the line that the given text ends in.
+    private static func leadingWhitespace(ofLineEndingAt text: String) -> String {
+        let start = text.lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
+        let line = text[start...]
+        return String(line.prefix(while: { $0 == " " || $0 == "\t" }))
+    }
+
+    /// Indents the lines that follow a newline within rendered text.
+    private static func indentContinuationLines(_ text: String, by indentation: String) -> String {
+        guard !indentation.isEmpty else { return text }
+        var result = ""
+        let characters = Array(text)
+        for (index, character) in characters.enumerated() {
+            result.append(character)
+            if character == "\n" {
+                let isLast = index == characters.count - 1
+                if isLast || characters[index + 1] != "\n" { result += indentation }
+            }
+        }
+        return result
     }
 
     // MARK: - Protected Areas
@@ -502,6 +752,15 @@ public final class MTLExecutionContext: Sendable {
             try await closeFile()
         }
 
+        // Render the deferred blocks of the main output
+        if let mainWriter = writerStack.first, let state = deferredStates.first, !state.emits.isEmpty
+        {
+            let content = await mainWriter.getContent()
+            let (resolved, _) = try await resolveDeferredBlocks(in: content, state: state)
+            await mainWriter.replaceContent(resolved)
+            deferredStates[0].emits = [:]
+        }
+
         // Save the main writer's content to stdout
         if let mainWriter = writerStack.first {
             // For in-memory strategy, create and finalize a writer for stdout
@@ -533,7 +792,13 @@ public final class MTLExecutionContext: Sendable {
         guard let currentWriter = writerStack.last else {
             return ""
         }
-        return await currentWriter.getContent()
+        let content = await currentWriter.getContent()
+        if let state = deferredStates.last, !state.emits.isEmpty,
+            let (resolved, _) = try? await resolveDeferredBlocks(in: content, state: state)
+        {
+            return resolved
+        }
+        return content
     }
 
     // MARK: - Debugging

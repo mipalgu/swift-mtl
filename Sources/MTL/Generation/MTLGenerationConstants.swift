@@ -25,6 +25,9 @@ public enum MTLGenerationKeywords {
 
     /// Separator clause of an emit block: `separator('...')`.
     public static let separator = "separator"
+
+    /// Clause of an emit block that renders it once for the whole collection.
+    public static let once = "once"
 }
 
 // MARK: - Deferred Block Names
