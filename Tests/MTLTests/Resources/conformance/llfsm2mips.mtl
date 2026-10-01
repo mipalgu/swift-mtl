@@ -20,7 +20,7 @@
 .eqv [sm.name/]_DINIT, 0
 .eqv [sm.name/]_[sm.initialState.stateName/], 1
 [for (s : State in sm.states)]
-.eqv [sm.name/]_[s.stateName/], [sm.states->indexOf(s) + 2/]
+.eqv [sm.name/]_[s.stateName/], [sm.states->indexOf(s) - 1 + 2/]
 [/for]
 [/for]
 
@@ -52,7 +52,7 @@ sn_[sm.name/]_[s.stateName/]: .asciiz "[s.stateName/]"
 [if (not sm.initialState.onEntry.oclIsUndefined() and sm.initialState.onEntry.statements->notEmpty())]
 [for (stmt : Statement in sm.initialState.onEntry.statements)]
 [if (stmt.oclIsKindOf(OutputLine))]
-oe_[sm.name/]_[sm.initialState.stateName/]_[sm.initialState.onEntry.statements->indexOf(stmt)/]: .asciiz "[stmt.oclAsType(OutputLine).theLine/]\n"
+oe_[sm.name/]_[sm.initialState.stateName/]_[sm.initialState.onEntry.statements->indexOf(stmt) - 1/]: .asciiz "[stmt.oclAsType(OutputLine).theLine/]\n"
 [/if]
 [/for]
 [/if]
@@ -60,7 +60,7 @@ oe_[sm.name/]_[sm.initialState.stateName/]_[sm.initialState.onEntry.statements->
 [if (not s.onEntry.oclIsUndefined() and s.onEntry.statements->notEmpty())]
 [for (stmt : Statement in s.onEntry.statements)]
 [if (stmt.oclIsKindOf(OutputLine))]
-oe_[sm.name/]_[s.stateName/]_[s.onEntry.statements->indexOf(stmt)/]: .asciiz "[stmt.oclAsType(OutputLine).theLine/]\n"
+oe_[sm.name/]_[s.stateName/]_[s.onEntry.statements->indexOf(stmt) - 1/]: .asciiz "[stmt.oclAsType(OutputLine).theLine/]\n"
 [/if]
 [/for]
 [/if]
@@ -123,7 +123,7 @@ onEntry_[sm.name/]_[sm.initialState.stateName/]:
 [if (not sm.initialState.onEntry.oclIsUndefined() and sm.initialState.onEntry.statements->notEmpty())]
 [for (stmt : Statement in sm.initialState.onEntry.statements)]
 [if (stmt.oclIsKindOf(OutputLine))]
-    la $a0, oe_[sm.name/]_[sm.initialState.stateName/]_[sm.initialState.onEntry.statements->indexOf(stmt)/]
+    la $a0, oe_[sm.name/]_[sm.initialState.stateName/]_[sm.initialState.onEntry.statements->indexOf(stmt) - 1/]
     jal print_str
 [elseif (stmt.oclIsKindOf(AssignmentIntegerLHS))]
 [let asgn : AssignmentIntegerLHS = stmt.oclAsType(AssignmentIntegerLHS)]
@@ -149,7 +149,7 @@ onEntry_[sm.name/]_[s.stateName/]:
 [if (not s.onEntry.oclIsUndefined() and s.onEntry.statements->notEmpty())]
 [for (stmt : Statement in s.onEntry.statements)]
 [if (stmt.oclIsKindOf(OutputLine))]
-    la $a0, oe_[sm.name/]_[s.stateName/]_[s.onEntry.statements->indexOf(stmt)/]
+    la $a0, oe_[sm.name/]_[s.stateName/]_[s.onEntry.statements->indexOf(stmt) - 1/]
     jal print_str
 [elseif (stmt.oclIsKindOf(AssignmentIntegerLHS))]
 [let asgn : AssignmentIntegerLHS = stmt.oclAsType(AssignmentIntegerLHS)]
@@ -203,7 +203,7 @@ step_[sm.name/]:
 
 step_[sm.name/]_check_trans:
 [for (tr : Transition in sm.transitions)]
-[let transIdx : Integer = sm.transitions->indexOf(tr)]
+[let transIdx : Integer = sm.transitions->indexOf(tr) - 1]
     # Transition [transIdx/]: [tr.sourceState.stateName/] -> [tr.targetState.stateName/]
     lw $t1, pc_[sm.name/]
     bne $t1, [if (tr.sourceState.stateName = sm.initialState.stateName)][sm.name/]_[sm.initialState.stateName/][else][sm.name/]_[tr.sourceState.stateName/][/if], skip_[sm.name/]_tr[transIdx/]
@@ -280,7 +280,7 @@ scheduler_loop:
 
     # Dispatch based on turn
 [for (sm : StateMachine in arr.stateMachine)]
-[let machineIdx : Integer = arr.stateMachine->indexOf(sm)]
+[let machineIdx : Integer = arr.stateMachine->indexOf(sm) - 1]
     li $t0, [machineIdx/]
     bne $s1, $t0, sched_skip_[machineIdx/]
     jal step_[sm.name/]
