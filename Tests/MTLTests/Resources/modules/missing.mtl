@@ -1,0 +1,2 @@
+[module missing('http://example.com/missing')/]
+[import does::not::exist/]

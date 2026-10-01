@@ -207,8 +207,11 @@ public final class MTLGenerator {
                 await executionContext.registerModel(alias, resource: resource)
             }
 
-            // Find the main template
-            guard let template = module.templates[mainTemplate] else {
+            // Find the main template (overloads are told apart by argument count)
+            let owner = module.inheritanceChain.first { !$0.templates(named: mainTemplate).isEmpty }
+            let candidates = owner?.templates(named: mainTemplate) ?? []
+            guard let template = candidates.first(where: { $0.parameters.count == arguments.count })
+                ?? candidates.first else {
                 throw MTLExecutionError.templateNotFound(
                     "Main template '\(mainTemplate)' not found in module '\(module.name)'"
                 )
@@ -220,7 +223,7 @@ public final class MTLGenerator {
             }
 
             // Execute the template
-            try await executeTemplate(template, arguments: arguments)
+            try await executeTemplate(template, arguments: arguments, owner: owner)
 
             // Finalize
             try await executionContext.finalize()
@@ -302,67 +305,38 @@ public final class MTLGenerator {
         _ template: MTLTemplate,
         arguments: [(any EcoreValue)?]
     ) async throws {
+        try await executeTemplate(template, arguments: arguments, owner: nil)
+    }
+
+    /// Executes a template declared in a specific module.
+    ///
+    /// Names used inside the template are resolved in the scope of the
+    /// declaring module, which may be one of the modules the generator's
+    /// module extends.
+    ///
+    /// - Parameters:
+    ///   - template: The template to execute
+    ///   - arguments: The arguments matching the template parameters
+    ///   - owner: The module that declares the template, or `nil` for the generator's module
+    ///
+    /// - Throws: `MTLExecutionError` if execution fails
+    func executeTemplate(
+        _ template: MTLTemplate,
+        arguments: [(any EcoreValue)?],
+        owner: MTLModule?
+    ) async throws {
         if debug {
             print("Executing template: \(template.name)")
             print("  Parameters: \(template.parameters.map { $0.name }.joined(separator: ", "))")
             print("  Arguments: \(arguments.count)")
         }
 
-        // Check parameter count
-        guard arguments.count == template.parameters.count else {
-            throw MTLExecutionError.invalidOperation(
-                "Template '\(template.name)' expects \(template.parameters.count) arguments, got \(arguments.count)"
-            )
-        }
-
-        // Push new scope for template execution
-        executionContext.pushScope()
-        defer { executionContext.popScope() }
-
-        // Bind parameters
-        for (parameter, argument) in zip(template.parameters, arguments) {
-            executionContext.setVariable(parameter.name, value: argument)
-
-            if debug {
-                let argDesc = argument.map { String(describing: $0) } ?? "nil"
-                print("  Bound: \(parameter.name) = \(argDesc)")
-            }
-        }
-
-        // Evaluate guard condition
-        if let guardExpr = template.guard {
-            let guardResult = try await executionContext.evaluateExpression(guardExpr)
-
-            if let boolValue = guardResult as? Bool, !boolValue {
-                if debug {
-                    print("  Guard failed, skipping template body")
-                }
-                return
-            } else if guardResult == nil {
-                if debug {
-                    print("  Guard evaluated to null, skipping template body")
-                }
-                return
-            }
-        }
-
-        // Execute template body
-        try await template.body.execute(in: executionContext)
-
-        // Evaluate post-condition
-        if let postExpr = template.post {
-            let postResult = try await executionContext.evaluateExpression(postExpr)
-
-            if let boolValue = postResult as? Bool, !boolValue {
-                throw MTLExecutionError.postConditionFailed(
-                    "Post-condition failed for template '\(template.name)'"
-                )
-            } else if postResult == nil {
-                throw MTLExecutionError.postConditionFailed(
-                    "Post-condition evaluated to null for template '\(template.name)'"
-                )
-            }
-        }
+        try await executionContext.runTemplate(
+            template,
+            owner: owner ?? module,
+            arguments: arguments,
+            capture: false
+        )
 
         // Update statistics
         statistics.templatesExecuted += 1
@@ -485,35 +459,22 @@ public final class MTLGenerator {
             print("Expanding macro: \(macro.name)")
         }
 
-        // Check parameter count
-        guard arguments.count == macro.parameters.count else {
-            throw MTLExecutionError.invalidOperation(
-                "Macro '\(macro.name)' expects \(macro.parameters.count) arguments, got \(arguments.count)"
-            )
+        // Generate the body in the scope of the caller
+        var bodyText: String?
+        if let bodyContent = bodyContent {
+            let context = executionContext
+            bodyText = try await context.captureOutput {
+                try await bodyContent.execute(in: context)
+            }
         }
 
-        // Check body parameter
-        if macro.bodyParameter != nil && bodyContent == nil {
-            throw MTLExecutionError.invalidOperation(
-                "Macro '\(macro.name)' expects body content but none provided"
-            )
-        }
-
-        // Push new scope for macro expansion
-        executionContext.pushScope()
-        defer { executionContext.popScope() }
-
-        // Bind regular parameters
-        for (parameter, argument) in zip(macro.parameters, arguments) {
-            executionContext.setVariable(parameter.name, value: argument)
-        }
-
-        // Bind body parameter (as a block that can be executed)
-        // TODO: This requires a way to represent blocks as values
-        // For now, macros with body parameters are not fully supported
-
-        // Execute macro body
-        try await macro.body.execute(in: executionContext)
+        try await executionContext.expandMacro(
+            macro,
+            owner: module,
+            arguments: arguments,
+            bodyText: bodyText,
+            capture: false
+        )
 
         if debug {
             print("  Macro expanded successfully")

@@ -1,0 +1,4 @@
+[module importsderived('http://example.com/importsderived')/]
+[import derived/]
+[template public main()][welcome('Kim')/][/template]
+[template public readsLabel()][label()/][/template]

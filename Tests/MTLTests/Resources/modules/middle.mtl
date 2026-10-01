@@ -1,0 +1,3 @@
+[module middle('http://example.com/middle')/]
+[import util/]
+[query public fromMiddle() : String = twice('m')/]

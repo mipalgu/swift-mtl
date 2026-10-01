@@ -1,0 +1,31 @@
+[module FileBlocks('http://example.com')]
+
+[template main()]
+[file ('greeting.txt', 'overwrite', 'UTF-8')]
+Hello from MTL!
+
+This file was generated using a file block.
+File mode: overwrite
+Encoding: UTF-8
+[/file]
+
+[file ('data.txt', 'overwrite', 'UTF-8')]
+Data File
+=========
+
+Item 1: Alpha
+Item 2: Beta
+Item 3: Gamma
+[/file]
+
+[file ('info.txt', 'overwrite', 'UTF-8')]
+MTL File Block Example
+=====================
+
+File blocks allow you to:
+- Generate multiple files from one template
+- Specify file names dynamically
+- Control file mode (overwrite/append/create)
+- Set character encoding
+[/file]
+[/template]

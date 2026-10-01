@@ -1,0 +1,47 @@
+[module Macros('http://example.com')]
+
+[macro section(title : String, content : Body)]
+========================================
+[title/]
+========================================
+[content/]
+
+[/macro]
+
+[macro codeBlock(language : String, content : Body)]
+```[language/]
+[content/]
+```
+[/macro]
+
+[macro emphasis(content : Body)]
+*** [content/] ***
+[/macro]
+
+[template main()]
+=== MTL Macro Examples ===
+
+[section('Introduction')]
+Macros allow you to define reusable text blocks with parameters.
+They are perfect for formatting, wrappers, and repeated structures.
+[/section]
+
+[section('Code Example')]
+Here's how to use the codeBlock macro:
+
+[codeBlock('swift')]
+func greet(name: String) {
+    print("Hello, \(name)!")
+}
+[/codeBlock]
+[/section]
+
+[section('Emphasis Example')]
+You can [emphasis()]emphasize important text[/emphasis] using macros!
+[/section]
+
+Macros are useful for:
+- Consistent formatting
+- Reducing duplication
+- Creating reusable templates
+[/template]

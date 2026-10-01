@@ -1,0 +1,12 @@
+[comment encoding = UTF-8 /]
+[module naming('http://example.com/naming')/]
+
+[query public decorate(s : String) : String = '<' + s + '>'/]
+
+[template public shout(s : String)][s.toUpperCase()/]![/template]
+
+[query private secret() : String = 'hidden'/]
+
+[query protected internal() : String = 'protected'/]
+
+[query public usesPrivate() : String = secret()/]

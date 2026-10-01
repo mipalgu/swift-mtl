@@ -1,0 +1,11 @@
+[module main('http://example.com/main')/]
+[import common::naming/]
+[import util/]
+
+[template public main()]
+[decorate('x')/] [shout('y')/] [twice('z')/] [usesPrivate()/]
+[/template]
+
+[template public readsPrivate()][secret()/][/template]
+
+[template public readsProtected()][internal()/][/template]

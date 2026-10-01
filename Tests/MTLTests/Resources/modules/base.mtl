@@ -1,0 +1,13 @@
+[module base('http://example.com/base')/]
+
+[template public greet(name : String)]Hello [name/][/template]
+
+[template public welcome(name : String)][greet(name)/]![/template]
+
+[query protected label() : String = 'base'/]
+
+[query private hidden() : String = 'base private'/]
+
+[template public describe()][label()/][/template]
+
+[template public baseMain()][welcome('Sam')/][/template]

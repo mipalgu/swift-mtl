@@ -1,0 +1,37 @@
+[module ControlFlow('http://example.com')]
+
+[template main()]
+=== MTL Control Flow Examples ===
+
+1. If Statement (true condition):
+[if (true)]
+   ✓ This branch is executed
+[else]
+   ✗ This branch is NOT executed
+[/if]
+
+2. If Statement (false condition):
+[if (false)]
+   ✗ This branch is NOT executed
+[else]
+   ✓ This branch is executed
+[/if]
+
+3. If/ElseIf/Else:
+[let value = 15]
+[if (value < 10)]
+   Value is less than 10
+[elseif (value < 20)]
+   Value is between 10 and 20 (current: [value/])
+[else]
+   Value is 20 or greater
+[/if]
+[/let]
+
+4. Let Bindings:
+[let firstName = 'John']
+[let lastName = 'Doe']
+   Full Name: [firstName + ' ' + lastName/]
+[/let]
+[/let]
+[/template]

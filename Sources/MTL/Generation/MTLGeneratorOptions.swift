@@ -163,20 +163,28 @@ enum MTLOutputPreparation {
         postProcessors: [any MTLFilePostProcessor]
     ) async throws -> Outcome? {
         var target = path
-        var result = TaggedBlockMerger.normalisedLineEndings(content)
+        var result = content
         if let existing, !options.forceOverwrite {
             if let redirected = options.redirectedPath(for: path) {
                 target = redirected
-                if TaggedBlockMerger.normalisedLineEndings(existing) == result { return nil }
+                if TaggedBlockMerger.normalisedLineEndings(existing)
+                    == TaggedBlockMerger.normalisedLineEndings(content)
+                {
+                    return nil
+                }
             } else if let mergeConfiguration {
                 result = try TaggedBlockMerger(configuration: mergeConfiguration)
-                    .merge(existing: existing, generated: result, regions: regions)
+                    .merge(
+                        existing: existing,
+                        generated: TaggedBlockMerger.normalisedLineEndings(content),
+                        regions: regions)
             }
         }
         for processor in postProcessors {
             result = try await processor.process(result, path: target)
         }
         if options.lineDelimiter != "\n" {
+            result = TaggedBlockMerger.normalisedLineEndings(result)
             result = result.replacingOccurrences(of: "\n", with: options.lineDelimiter)
         }
         return Outcome(path: target, content: result)

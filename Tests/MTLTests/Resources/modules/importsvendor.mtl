@@ -1,0 +1,3 @@
+[module importsvendor('http://example.com/importsvendor')/]
+[import vendor::shared/]
+[template public main()][shared()/][/template]

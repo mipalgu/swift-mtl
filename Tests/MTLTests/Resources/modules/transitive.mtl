@@ -1,0 +1,4 @@
+[module transitive('http://example.com/transitive')/]
+[import middle/]
+[template public main()][deep()/][/template]
+[template public viaMiddle()][fromMiddle()/][/template]

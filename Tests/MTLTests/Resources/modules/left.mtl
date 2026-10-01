@@ -1,0 +1,3 @@
+[module left('http://example.com/left')/]
+[import util/]
+[query public fromLeft() : String = twice('l')/]

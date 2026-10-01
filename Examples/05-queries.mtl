@@ -1,0 +1,34 @@
+[module Queries('http://example.com')]
+
+[query square(n : Integer) : Integer = n * n/]
+
+[query cube(n : Integer) : Integer = n * n * n/]
+
+[query isEven(n : Integer) : Boolean = (n - (n / 2) * 2) = 0/]
+
+[query fullName(first : String, last : String) : String =
+  first + ' ' + last/]
+
+[query greeting(name : String) : String =
+  'Hello, ' + name + '!'/]
+
+[template main()]
+=== MTL Query Examples ===
+
+1. Mathematical Queries:
+   Square of 5: [square(5)/]
+   Cube of 3: [cube(3)/]
+
+2. Boolean Queries:
+   Is 4 even? [isEven(4)/]
+   Is 7 even? [isEven(7)/]
+
+3. String Queries:
+   [fullName('John', 'Doe')/]
+   [greeting('World')/]
+
+Queries are useful for:
+- Encapsulating reusable logic
+- Improving template readability
+- Centralizing common calculations
+[/template]

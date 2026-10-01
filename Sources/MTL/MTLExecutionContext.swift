@@ -92,7 +92,13 @@ public final class MTLExecutionContext: Sendable {
     public let module: MTLModule
 
     /// The AQL execution context for expression evaluation.
-    private let aqlContext: AQLExecutionContext
+    let aqlContext: AQLExecutionContext
+
+    /// The modules whose elements are currently executing, innermost last.
+    ///
+    /// Invocations resolve names relative to the innermost module, so that a
+    /// template of an imported module sees that module's own imports.
+    var moduleStack: [MTLModule] = []
 
     /// The generation strategy for output management.
     private let generationStrategy: any MTLGenerationStrategy
@@ -198,6 +204,12 @@ public final class MTLExecutionContext: Sendable {
 
         // Create initial stdout writer
         self.writerStack = [MTLWriter()]
+
+        // Let expressions evaluated by AQL find this runtime for invocations
+        self.aqlContext.setVariable(
+            MTLSyntax.runtimeContextVariable,
+            value: MTLRuntimeHandle(runtime: self)
+        )
     }
 
     // MARK: - Variable Management
@@ -250,6 +262,7 @@ public final class MTLExecutionContext: Sendable {
     public func pushScope() {
         scopeStack.append(variables)
         variables = [:]
+        aqlContext.pushScope()
     }
 
     /// Pops the current variable scope from the stack.
@@ -260,6 +273,7 @@ public final class MTLExecutionContext: Sendable {
     public func popScope() {
         guard !scopeStack.isEmpty else { return }
         variables = scopeStack.removeLast()
+        aqlContext.popScope()
     }
 
     // MARK: - Expression Evaluation

@@ -1,0 +1,36 @@
+[comment encoding = UTF-8 /]
+[module acceleoFeatures('http://www.eclipse.org/emf/2002/Ecore', 'http://example.com/second')/]
+
+[comment]
+  A module that uses every construct of the supported Acceleo dialect once.
+[/comment]
+
+[**
+ * Names a thing.
+ * @param name the name
+ **/]
+[query public label(name : String) : String = 'label:' + name/]
+
+[query private twice(n : Integer) : Integer = n * 2/]
+
+[macro bracketed(open : String, content : Body)][open/][content/][']'/][/macro]
+
+[template public describe(n : Integer) ? (n > 0) post (trim())]  [if n > 1 then 'many' else 'one' endif/]  [/template]
+
+[template protected items() overrides items]
+[for (x : OclAny | Sequence{1, 2, 3}) separator(', ') before('(') after(')')][i/]=[x/][/for]
+[/template]
+
+[template public main()]
+[comment @main /]
+[-- a classic comment]
+[let n = twice(4)]
+[label('x')/] [describe(n)/] [items()/]
+[/let]
+[for (e | OrderedSet{'a', 'b'}->select(size() = 1))]
+[bracketed('[')]inner[/bracketed]
+[/for]
+[file ('features.txt', 'append', 'UTF-8')]
+[let r = 7 mod 3 in r + 1/]
+[/file]
+[/template]

@@ -1,0 +1,3 @@
+[module right('http://example.com/right')/]
+[import util/]
+[query public fromRight() : String = twice('r')/]

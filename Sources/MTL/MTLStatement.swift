@@ -142,7 +142,7 @@ public struct MTLExpressionStatement: MTLStatement {
     public func execute(in context: MTLExecutionContext) async throws {
         let result = try await expression.evaluate(in: context)
         if let result = result {
-            await context.write("\(result)")
+            await context.writeExpressionResult(result)
         }
         if newLineNeeded {
             await context.writeLine()
@@ -257,6 +257,16 @@ public struct MTLForStatement: MTLStatement {
     /// Optional expression to evaluate and output between iterations.
     public let separator: MTLExpression?
 
+    /// Optional expression whose text is output before the first iteration.
+    ///
+    /// The text is only output if the collection has at least one element.
+    public let before: MTLExpression?
+
+    /// Optional expression whose text is output after the last iteration.
+    ///
+    /// The text is only output if the collection has at least one element.
+    public let after: MTLExpression?
+
     /// The block of statements to execute for each iteration.
     public let body: MTLBlock
 
@@ -268,14 +278,19 @@ public struct MTLForStatement: MTLStatement {
     /// - Parameters:
     ///   - binding: The loop variable binding
     ///   - separator: Optional separator expression (default: nil)
+    ///   - before: Optional text output before the first iteration (default: nil)
+    ///   - after: Optional text output after the last iteration (default: nil)
     ///   - body: The loop body
     ///   - multiLines: Whether this is multi-line (default: true)
     public init(
-        binding: MTLBinding, separator: MTLExpression? = nil, body: MTLBlock,
-        multiLines: Bool = true
+        binding: MTLBinding, separator: MTLExpression? = nil,
+        before: MTLExpression? = nil, after: MTLExpression? = nil,
+        body: MTLBlock, multiLines: Bool = true
     ) {
         self.binding = binding
         self.separator = separator
+        self.before = before
+        self.after = after
         self.body = body
         self.multiLines = multiLines
     }
@@ -298,14 +313,25 @@ public struct MTLForStatement: MTLStatement {
             items = []
         }
 
+        if !items.isEmpty, let before = before,
+           let beforeValue = try await before.evaluate(in: context) {
+            await context.write("\(beforeValue)")
+        }
+
         // Execute body for each item
         for (index, item) in items.enumerated() {
-            // Push scope and bind loop variable
+            // Push scope and bind loop variable and the one-based counter
             context.pushScope()
+            context.setVariable(MTLSyntax.iterationCounterVariable, value: index + 1)
             context.setVariable(binding.variable.name, value: item)
 
             // Execute body
-            try await body.execute(in: context)
+            do {
+                try await body.execute(in: context)
+            } catch {
+                context.popScope()
+                throw error
+            }
 
             // Pop scope
             context.popScope()
@@ -317,6 +343,11 @@ public struct MTLForStatement: MTLStatement {
                     await context.write("\(sepValue)")
                 }
             }
+        }
+
+        if !items.isEmpty, let after = after,
+           let afterValue = try await after.evaluate(in: context) {
+            await context.write("\(afterValue)")
         }
     }
 }
@@ -480,7 +511,16 @@ public struct MTLFileStatement: MTLStatement {
     public let url: MTLExpression
 
     /// The file open mode.
+    ///
+    /// Used when ``modeExpression`` is `nil`.
     public let mode: MTLOpenMode
+
+    /// An expression that selects the mode at generation time.
+    ///
+    /// Set when the mode in the `file` header is not a literal. It must
+    /// evaluate to a Boolean (`false` overwrites, `true` appends) or to one of
+    /// the strings `'overwrite'`, `'append'`, or `'create'`.
+    public let modeExpression: MTLExpression?
 
     /// Optional charset expression.
     public let charset: MTLExpression?
@@ -496,18 +536,21 @@ public struct MTLFileStatement: MTLStatement {
     /// - Parameters:
     ///   - url: The file path expression
     ///   - mode: The file open mode (default: .overwrite)
+    ///   - modeExpression: An expression that overrides `mode` at generation time (default: nil)
     ///   - charset: Optional charset expression (default: nil)
     ///   - body: The file content block
     ///   - multiLines: Whether this is multi-line (default: true)
     public init(
         url: MTLExpression,
         mode: MTLOpenMode = .overwrite,
+        modeExpression: MTLExpression? = nil,
         charset: MTLExpression? = nil,
         body: MTLBlock,
         multiLines: Bool = true
     ) {
         self.url = url
         self.mode = mode
+        self.modeExpression = modeExpression
         self.charset = charset
         self.body = body
         self.multiLines = multiLines
@@ -521,17 +564,28 @@ public struct MTLFileStatement: MTLStatement {
             throw MTLExecutionError.typeError("File URL must evaluate to a string")
         }
 
+        // Evaluate the mode if it is computed
+        var effectiveMode = mode
+        if let modeExpression = modeExpression {
+            let modeResult = try await modeExpression.evaluate(in: context)
+            guard let computed = MTLOpenMode(value: modeResult) else {
+                throw MTLExecutionError.typeError(
+                    "File mode must be a Boolean or one of 'overwrite', 'append', 'create'")
+            }
+            effectiveMode = computed
+        }
+
         // Evaluate charset if present
         let charsetString: String
         if let charset = charset {
             let charsetResult = try await charset.evaluate(in: context)
-            charsetString = (charsetResult as? String) ?? "UTF-8"
+            charsetString = (charsetResult as? String) ?? MTLSyntax.defaultCharset
         } else {
-            charsetString = "UTF-8"
+            charsetString = MTLSyntax.defaultCharset
         }
 
         // Open file
-        try await context.openFile(url: urlString, mode: mode, charset: charsetString)
+        try await context.openFile(url: urlString, mode: effectiveMode, charset: charsetString)
 
         // Execute body
         try await body.execute(in: context)
@@ -688,56 +742,30 @@ public struct MTLMacroInvocation: MTLStatement {
 
     @MainActor
     public func execute(in context: MTLExecutionContext) async throws {
-        // Look up macro in module
-        guard let macro = context.module.macros[macroName] else {
+        // Evaluate the arguments in the scope of the invocation
+        var argumentValues: [(any EcoreValue)?] = []
+        for argumentExpr in arguments {
+            argumentValues.append(try await argumentExpr.evaluate(in: context))
+        }
+
+        // Look up the macro in this module, the modules it extends, and its imports
+        guard let (macro, owner) = context.macro(named: macroName, for: argumentValues) else {
             throw MTLExecutionError.macroNotFound(
                 "Macro '\(macroName)' not found in module '\(context.module.name)'")
         }
 
-        // Check parameter count
-        guard arguments.count == macro.parameters.count else {
-            throw MTLExecutionError.invalidOperation(
-                "Macro '\(macroName)' expects \(macro.parameters.count) arguments, got \(arguments.count)"
-            )
+        // Generate the body text, also in the scope of the invocation
+        var bodyText: String?
+        if let body = bodyContent {
+            bodyText = try await context.captureOutput { try await body.execute(in: context) }
         }
 
-        // Check body parameter requirement
-        if macro.bodyParameter != nil && bodyContent == nil {
-            throw MTLExecutionError.invalidOperation(
-                "Macro '\(macroName)' expects body content but none provided"
-            )
-        }
-
-        // Push new scope for macro expansion
-        context.pushScope()
-        defer { context.popScope() }
-
-        // Evaluate and bind arguments
-        for (parameter, argumentExpr) in zip(macro.parameters, arguments) {
-            let argumentValue = try await argumentExpr.evaluate(in: context)
-            context.setVariable(parameter.name, value: argumentValue)
-        }
-
-        // Bind body parameter if present
-        if let bodyParam = macro.bodyParameter, let body = bodyContent {
-            // Create a temporary writer to capture body content
-            let tempWriter = MTLWriter(indentation: context.currentIndentation)
-
-            // Manually push temporary writer to capture output
-            await context.pushWriter(tempWriter)
-
-            // Execute the body content to generate text in the temp writer
-            try await body.execute(in: context)
-
-            // Pop the temporary writer
-            await context.popWriter()
-
-            // Get the captured text and bind it to the body parameter
-            let bodyText = await tempWriter.getContent()
-            context.setVariable(bodyParam, value: bodyText as String)
-        }
-
-        // Execute macro body
-        try await macro.body.execute(in: context)
+        try await context.expandMacro(
+            macro,
+            owner: owner,
+            arguments: argumentValues,
+            bodyText: bodyText,
+            capture: false
+        )
     }
 }
