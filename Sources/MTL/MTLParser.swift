@@ -1093,7 +1093,8 @@ private actor MTLSyntaxParser {
                 left = MTLExpression(
                     AQLBinaryExpression(left: left.aqlExpression, op: .multiply, right: right.aqlExpression)
                 )
-            case .operator("/"):
+            case .operator("/"), .slash where peek()?.type != .rightBracket:
+                // The lexer reports '/' as a slash token; a slash before ']' ends the directive instead
                 advance()
                 let right = try parseUnaryExpression()
                 left = MTLExpression(
@@ -1636,6 +1637,10 @@ private actor MTLSyntaxParser {
         }
 
         try expect(.rightParen)
+
+        // Acceleo spells the prefixes as startTagPrefix(...) and endTagPrefix(...) clauses
+        try parseProtectedAreaClauses(startTagPrefix: &startTagPrefix, endTagPrefix: &endTagPrefix)
+
         try expect(.rightBracket)
 
         // Parse body
@@ -2523,5 +2528,36 @@ extension MTLSyntaxParser {
             }
         }
         return (.overwrite, try parseExpression())
+    }
+}
+
+// MARK: - Syntax Parser: Protected Areas
+
+extension MTLSyntaxParser {
+
+    /// Parses the optional `startTagPrefix(expr)` and `endTagPrefix(expr)` clauses of a protected area.
+    ///
+    /// - Parameters:
+    ///   - startTagPrefix: Receives the start prefix expression if the clause is present.
+    ///   - endTagPrefix: Receives the end prefix expression if the clause is present.
+    /// - Throws: `MTLParseError` if a clause is malformed.
+    fileprivate func parseProtectedAreaClauses(
+        startTagPrefix: inout MTLExpression?,
+        endTagPrefix: inout MTLExpression?
+    ) throws {
+        while case .identifier(let clause) = current()?.type, peek()?.type == .leftParen {
+            guard clause == MTLSyntax.startTagPrefixClause || clause == MTLSyntax.endTagPrefixClause else {
+                return
+            }
+            advance()
+            try expect(.leftParen)
+            let value = try parseExpression()
+            try expect(.rightParen)
+            if clause == MTLSyntax.startTagPrefixClause {
+                startTagPrefix = value
+            } else {
+                endTagPrefix = value
+            }
+        }
     }
 }

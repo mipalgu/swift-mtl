@@ -208,4 +208,34 @@ struct MTLWhitespaceTests {
         #expect(output.contains("default"))
         #expect(output.contains("START PROTECTED REGION body"))
     }
+
+    @Test("Protected area prefixes can be written as clauses")
+    @MainActor
+    func protectedAreaClauses() async throws {
+        let source = """
+            [module m('u')/]
+            [template main()]
+            [protected ('id') startTagPrefix('// ') endTagPrefix('// ')]
+            body
+            [/protected]
+            [/template]
+            """
+        let module = try await MTLTestSupport.parse(source)
+        let area = try #require(module.templates["main"]?.body.statements.first as? MTLProtectedArea)
+        #expect(area.startTagPrefix != nil)
+        #expect(area.endTagPrefix != nil)
+        let output = try await MTLTestSupport.output(source)
+        #expect(output.contains("// START PROTECTED REGION id"))
+        #expect(output.contains("// END PROTECTED REGION id"))
+    }
+
+    @Test("Positional protected area prefixes still work")
+    func protectedAreaPositional() async throws {
+        let module = try await MTLTestSupport.parse("""
+            [module m('u')/]
+            [template main()][protected ('id', '#', '#')]x[/protected][/template]
+            """)
+        let area = try #require(module.templates["main"]?.body.statements.first as? MTLProtectedArea)
+        #expect(area.startTagPrefix != nil)
+    }
 }

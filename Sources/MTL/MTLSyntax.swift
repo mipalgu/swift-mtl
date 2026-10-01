@@ -57,6 +57,14 @@ public enum MTLSyntax {
     /// The file extension of MTL module files (without the leading dot).
     public static let moduleFileExtension = "mtl"
 
+    // MARK: - Protected Areas
+
+    /// The clause that sets the text in front of the start marker of a protected area.
+    public static let startTagPrefixClause = "startTagPrefix"
+
+    /// The clause that sets the text in front of the end marker of a protected area.
+    public static let endTagPrefixClause = "endTagPrefix"
+
     // MARK: - Types
 
     /// The declared type that accepts any value.

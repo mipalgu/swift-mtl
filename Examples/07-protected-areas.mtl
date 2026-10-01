@@ -1,0 +1,37 @@
+[module ProtectedAreas('http://example.com')]
+
+[template main()]
+// Generated Code
+// DO NOT EDIT - except in protected areas
+
+class MyClass {
+    // Generated properties
+    var id: Int
+    var name: String
+
+[protected ('custom-methods') startTagPrefix('// ') endTagPrefix('// ')]
+    // Add your custom methods here
+    // This section will be preserved across regenerations
+[/protected]
+
+    // Generated initializer
+    init(id: Int, name: String) {
+        self.id = id
+        self.name = name
+
+[protected ('custom-init') startTagPrefix('// ') endTagPrefix('// ')]
+        // Add custom initialization code here
+[/protected]
+    }
+
+    // Generated method
+    func describe() -> String {
+        let base = "MyClass(id: \(id), name: \(name))"
+
+[protected ('custom-description') startTagPrefix('// ') endTagPrefix('// ')]
+        // Customize the description here
+        return base
+[/protected]
+    }
+}
+[/template]

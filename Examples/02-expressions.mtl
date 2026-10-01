@@ -1,0 +1,21 @@
+[module Expressions('http://example.com')]
+
+[query getVersion() : String = '1.0.0'/]
+
+[query add(a : Integer, b : Integer) : Integer = a + b/]
+
+[template main()]
+=== MTL Expression Examples ===
+
+1. Arithmetic:
+   5 + 3 = [5 + 3/]
+   10 - 4 = [10 - 4/]
+   6 * 7 = [6 * 7/]
+
+2. String Concatenation:
+   ['Hello' + ' ' + 'World'/]
+
+3. Queries:
+   Version: [getVersion()/]
+   Sum: [add(10, 20)/]
+[/template]
