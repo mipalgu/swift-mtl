@@ -131,3 +131,22 @@ struct MTLGlobalVariableTests {
         #expect(try await context.getVariable("x") as? String == "global")
     }
 }
+
+/// Tests for the words that cannot name a variable.
+@Suite("MTL Reserved Words")
+struct MTLReservedWordTests {
+
+    @Test("Keywords of the syntax are reserved")
+    func keywordsReserved() {
+        for word in ["template", "if", "let", "for", "endif", "self", "Sequence", "true", "null"] {
+            #expect(MTLSyntax.reservedWords.contains(word), "\(word) should be reserved")
+        }
+    }
+
+    @Test("Ordinary identifiers are not reserved")
+    func identifiersFree() {
+        for word in ["package", "version", "author", "x1"] {
+            #expect(!MTLSyntax.reservedWords.contains(word), "\(word) should be free")
+        }
+    }
+}
