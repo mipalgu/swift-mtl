@@ -549,7 +549,7 @@ public final class MTLExecutionContext: Sendable {
     /// Mirrors a collected set into a hidden variable that `collected(...)` reads.
     private func mirrorCollectedSet(_ name: String) {
         let values: [any EcoreValue] = deferredStates.last?.sets[name].map { Array($0) } ?? []
-        aqlContext.setVariable(
+        aqlContext.setGlobalVariable(
             MTLDeferredBlockNames.collectedVariablePrefix + name, value: EcoreValueArray(values))
     }
 
@@ -558,13 +558,13 @@ public final class MTLExecutionContext: Sendable {
         from old: MTLDeferredState?, to new: MTLDeferredState?
     ) {
         for name in old?.sets.keys ?? [] {
-            aqlContext.setVariable(
+            aqlContext.setGlobalVariable(
                 MTLDeferredBlockNames.collectedVariablePrefix + name,
                 value: EcoreValueArray([]))
         }
         for (name, set) in new?.sets ?? [:] {
             let values: [any EcoreValue] = Array(set)
-            aqlContext.setVariable(
+            aqlContext.setGlobalVariable(
                 MTLDeferredBlockNames.collectedVariablePrefix + name,
                 value: EcoreValueArray(values))
         }

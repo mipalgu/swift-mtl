@@ -276,4 +276,38 @@ struct MTLDeferredBlockTests {
         #expect(emit.separator != nil)
         #expect(emit.body.inlined)
     }
+
+    @Test("The collected set is complete inside an emit body")
+    @MainActor
+    func collectedInsideEmit() async throws {
+        let files = try await generateFiles(
+            module(
+                """
+                [file ('A.txt', 'overwrite', 'UTF-8')]
+                [emit ('imports') separator(',')][item/]:[collected('imports')->size()/][/emit]
+                [collect ('imports', 'a')/][collect ('imports', 'b')/]
+                [emit ('imports') separator(',')][collected('imports')->sep('+')/][/emit]
+                [/file]
+                """))
+        let text = trimmed(files["A.txt"])
+        #expect(text.contains("a:2,b:2"))
+        #expect(text.contains("a+b,a+b"))
+    }
+
+    @Test("Values collected in nested scopes are visible to collected in emit bodies")
+    @MainActor
+    func collectedFromNestedScopes() async throws {
+        let source = """
+            [module Test('http://example.com')]
+            [template gather(name : String)][collect ('s', name)/][/template]
+            [template main()]
+            [file ('A.txt', 'overwrite', 'UTF-8')]
+            [for (n | Sequence{'x', 'y', 'z'})][gather(n)/][/for]
+            [emit ('s') separator(',')][item/]=[collected('s')->size()/][/emit]
+            [/file]
+            [/template]
+            """
+        let files = try await generateFiles(source)
+        #expect(trimmed(files["A.txt"]) == "x=3,y=3,z=3")
+    }
 }
