@@ -1,0 +1,3 @@
+[module importer('http://example.com/importer')/]
+[import lib/]
+[template public main()][which()/][/template]

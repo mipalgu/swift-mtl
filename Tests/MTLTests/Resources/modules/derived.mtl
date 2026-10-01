@@ -1,0 +1,11 @@
+[module derived('http://example.com/derived') extends base/]
+
+[template public greet(name : String) overrides greet]Howdy [name/][/template]
+
+[query protected label() : String = 'derived ' + super_label()/]
+
+[query private super_label() : String = 'label'/]
+
+[template public main()][welcome('Pat')/] [describe()/][/template]
+
+[template public readsHidden()][hidden()/][/template]

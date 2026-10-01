@@ -1,0 +1,4 @@
+[module diamond('http://example.com/diamond')/]
+[import left/]
+[import right/]
+[template public main()][fromLeft()/][fromRight()/][/template]

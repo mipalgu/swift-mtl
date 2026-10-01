@@ -1,0 +1,2 @@
+[module lib('http://example.com/lib')/]
+[query public which() : String = 'relative'/]

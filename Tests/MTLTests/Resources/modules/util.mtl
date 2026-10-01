@@ -1,0 +1,3 @@
+[module util('http://example.com/util')/]
+
+[query public twice(s : String) : String = s + s/]

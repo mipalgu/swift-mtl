@@ -1,0 +1,3 @@
+[module a('http://example.com/a')/]
+[import b/]
+[query public fromA() : String = 'a'/]

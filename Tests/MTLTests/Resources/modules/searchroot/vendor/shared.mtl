@@ -1,0 +1,2 @@
+[module shared('http://example.com/shared')/]
+[query public shared() : String = 'search path'/]
