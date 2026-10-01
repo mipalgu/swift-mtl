@@ -98,6 +98,15 @@ public enum MTLSyntax {
         "oclIsKindOf", "oclIsTypeOf", "oclAsType", "oclIsUndefined"
     ]
 
+    /// The operations whose arguments name types, so that qualified names in them denote types.
+    public static let typeArgumentOperationNames: Set<String> = typeOperationNames.union(["filter"])
+
+    /// The operations without a dedicated expression node whose argument is an iterator body.
+    ///
+    /// The iterator variable may be omitted in the argument, in which case the body is evaluated
+    /// with the element bound to `self`.
+    public static let iteratorOperationNames: Set<String> = ["sortedBy", "closure", "one", "isUnique"]
+
     // MARK: - Block Keywords
 
     /// The keywords that open a block and therefore have a matching closing tag.

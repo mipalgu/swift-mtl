@@ -104,19 +104,21 @@ Expressions are swift-aql nodes (`AQLExpression`) built by ``MTLParser`` and eva
 swift-aql against the registered models. The parser supports:
 
 - `if/then/else/endif`, `let x = e in body`, `implies` (right associative and loosest),
-  `xor`, `or`, `and`, comparisons, `+ - * /`, `mod`, `div`, unary `not` and `-`;
+  `xor`, `or`, `and`, comparisons, `+ - * /`, `mod`, `div` (the AQL integer division operator), unary `not` and `-`;
 - integer, real, string (with `\\` and `\'` escapes) and `null` literals;
-- qualified names such as `pkg::Type` and `pkg::Enum::literal`;
+- qualified names: `pkg::Type` is an `AQLTypeLiteralExpression` and `pkg::Enum::literal` an
+  `AQLEnumLiteralExpression`; inside the arguments of a type operation every qualified name
+  is a type;
 - collection literals `Sequence{...}`, `OrderedSet{...}`, `Set{...}` and `Bag{...}`
-  (``MTLCollectionLiteralExpression``);
+  (`AQLCollectionLiteralExpression`);
 - navigation `a.b` and calls;
 - `->name(args)` for any name. The known iterators `select`, `reject`, `collect`, `any`,
   `exists`, `forAll`, `indexOf`, `size`, `isEmpty`, `notEmpty`, `first` and `last`
-  become AQL collection expressions, other names become calls with the collection as
-  source. A lambda argument `(x | body)` or `(x : T | body)` becomes an
-  ``MTLLambdaExpression``;
-- iterator bodies without a variable, such as `->select(oclIsKindOf(EClass))`, which use
-  `self` as the implicit iterator;
+  become AQL collection expressions, other names become `AQLCallExpression` nodes that
+  use the arrow, so the library receives the collection. A lambda argument `(x | body)`
+  or `(x : T | body)` becomes an `AQLLambdaExpression`;
+- iterator bodies without a variable, such as `->select(oclIsKindOf(EClass))` or
+  `->sortedBy(size())`, which use `self` as the implicit iterator;
 - the type operations `oclIsKindOf`, `oclIsTypeOf`, `oclAsType` and `oclIsUndefined`. The
   bare form applies to `self`.
 

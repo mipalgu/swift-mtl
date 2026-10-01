@@ -121,12 +121,12 @@ public struct MTLInvocationExpression: AQLExpression {
 
 // MARK: - Lambda Expression
 
-/// An iterator-style argument of the form `(x : T | body)` for an operation without a dedicated node.
+/// An iterator-style argument of the form `(x : T | body)`.
 ///
-/// The released AQL library has dedicated expression nodes only for a fixed
-/// set of iterating operations. For every other operation the parser keeps
-/// the iterator and the body in this node so that an AQL integration can
-/// evaluate them. Evaluating the node itself is an error.
+/// The parser no longer produces this node: iterator arguments are `AQLLambdaExpression`
+/// values, which the AQL services evaluate. The type remains for source compatibility.
+/// Evaluating the node itself is an error.
+@available(*, deprecated, message: "Use AQLLambdaExpression")
 public struct MTLLambdaExpression: AQLExpression {
 
     /// The name of the iterator variable.
@@ -161,8 +161,11 @@ public struct MTLLambdaExpression: AQLExpression {
 
 /// A collection literal such as `Sequence{1, 2, 3}` or `OrderedSet{}`.
 ///
-/// Evaluates to an `EcoreValueArray` holding the values of its elements in
+/// The parser no longer produces this node: collection literals are
+/// `AQLCollectionLiteralExpression` values. The type remains for source compatibility.
+/// It evaluates to an `EcoreValueArray` holding the values of its elements in
 /// order. Sets and ordered sets drop duplicate elements.
+@available(*, deprecated, message: "Use AQLCollectionLiteralExpression")
 public struct MTLCollectionLiteralExpression: AQLExpression {
 
     /// The collection kind written before the braces (`Sequence`, `OrderedSet`, `Set`, `Bag`).

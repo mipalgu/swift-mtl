@@ -92,8 +92,6 @@ swift-aql release. See <doc:UnderstandingMTL> for details.
 
 - ``MTLExpression``
 - ``MTLInvocationExpression``
-- ``MTLLambdaExpression``
-- ``MTLCollectionLiteralExpression``
 
 ### Protected Areas
 
