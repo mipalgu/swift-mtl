@@ -1,40 +1,45 @@
-# Swift MTL
+# swift-mtl Index
 
-The [swift-mtl](https://github.com/mipalgu/swift-mtl) package provides
-a pure Swift implementation of the
-[OMG MOFM2T](https://www.omg.org/spec/MOFM2T/) standard for
-template-based code generation.
-
-## Installation
-
-Add to your `Package.swift`:
-
-```swift
-dependencies: [
-    .package(url: "https://github.com/mipalgu/swift-mtl.git", branch: "main"),
-]
-```
-
-## Requirements
-
-- Swift 6.0 or later
-- macOS 15.0+
-
-## References
-
-- [OMG MOFM2T (MOF Model-to-Text Transformation)](https://www.omg.org/spec/MOFM2T/)
-- [Eclipse Acceleo](https://eclipse.dev/acceleo/)
-- [OMG OCL (Object Constraint Language)](https://www.omg.org/spec/OCL/)
-- [Eclipse Modeling Framework (EMF)](https://eclipse.dev/emf/)
-
-## Related Packages
-
-- [swift-ecore](https://github.com/mipalgu/swift-ecore) - EMF/Ecore metamodelling
-- [swift-atl](https://github.com/mipalgu/swift-atl) - ATL model transformations
-- [swift-aql](https://github.com/mipalgu/swift-aql) - AQL model queries
-- [swift-modelling](https://github.com/mipalgu/swift-modelling) - Unified MDE toolkit
+swift-mtl is a Swift library (product `MTL`) for model-to-text transformation with the OMG MOFM2T / Acceleo template language. It contains no executable; the `swift-mtl` command-line tool is part of the swift-modelling package.
 
 ## Documentation
 
-The package provides template-based model-to-text transformation capabilities.
-For details, see [Getting Started](https://mipalgu.github.io/swift-mtl/documentation/mtl/gettingstarted) and [Understanding MTL](https://mipalgu.github.io/swift-mtl/documentation/mtl/understandingmtl).
+- [README.md](README.md): overview, installation, quick start, syntax tour, known limits
+- [SYNTAX.md](SYNTAX.md): full syntax reference
+- [Examples/README.md](Examples/README.md): the example templates
+- [Tests/MTLTests/README.md](Tests/MTLTests/README.md): the test suites and fixtures
+- `Sources/MTL/MTL.docc`: DocC articles (`GettingStarted.md`, `UnderstandingMTL.md`) and the module page (`MTL.md`)
+- [LICENCE](LICENCE)
+
+## Sources (Sources/MTL)
+
+- `MTL.swift`: placeholder source file
+- `MTLParser.swift`: lexer and parser; `parse` links imports and parents, `parseWithoutLinking` does not
+- `MTLSyntax.swift`: keywords, reserved names, and markers
+- `MTLModule.swift`: the module model
+- `MTLModuleLoader.swift`: `MTLModuleResolver` and `MTLModuleLoader` for imports and extends
+- `MTLTemplate.swift`, `MTLQuery.swift`, `MTLMacro.swift`, `MTLVariable.swift`: declarations
+- `MTLBlock.swift`, `MTLStatement.swift`: statements and blocks
+- `MTLExpression.swift`, `MTLExpressions.swift`, `MTLInvocation.swift`, `MTLTypeMatcher.swift`: expressions, invocation, and overload matching
+- `MTLGenerator.swift`, `MTLGenerationStrategy.swift`: the generation engine and its in-memory and file system strategies
+- `MTLExecutionContext.swift`, `MTLWriter.swift`, `MTLIndentation.swift`, `MTLStandaloneLines.swift`: execution state, output, indentation, and the block-tag whitespace rule
+- `MTLProtectedAreaManager.swift`: protected area content
+- `MTLErrors.swift`: runtime errors
+
+## Examples
+
+`Examples/01-hello-world.mtl` to `Examples/07-protected-areas.mtl`: hello world, expressions, control flow, file blocks, queries, macros, and protected areas.
+
+## Tests (Tests/MTLTests)
+
+See [Tests/MTLTests/README.md](Tests/MTLTests/README.md). Run them with:
+
+```sh
+swift test
+```
+
+## Links
+
+- [swift-mtl on GitHub](https://github.com/mipalgu/swift-mtl)
+- [OMG MOFM2T](https://www.omg.org/spec/MOFM2T/)
+- [Acceleo](https://eclipse.dev/acceleo/)

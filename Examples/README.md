@@ -1,129 +1,64 @@
 # MTL Examples
 
-This directory contains example MTL templates demonstrating various features.
+This directory holds seven small templates that show the main features of the
+language. Each one parses and runs. The language itself is described in
+`SYNTAX.md` at the root of the package.
 
-## Running Examples
+## The examples
 
-From the swift-mtl root directory:
+| File | Demonstrates |
+| --- | --- |
+| `01-hello-world.mtl` | the module header and a template that emits plain text |
+| `02-expressions.mtl` | arithmetic, string concatenation and calls to queries from expression tags |
+| `03-control-flow.mtl` | `if`, `elseif`, `else` and nested `let` bindings |
+| `04-file-blocks.mtl` | `file` blocks that write three files from one template, using `'overwrite'` mode and `'UTF-8'` |
+| `05-queries.mtl` | typed queries returning integers, Booleans and strings, including a multi-line query |
+| `06-macros.mtl` | macros with `Body` parameters, called with a body between opening and closing tags |
+| `07-protected-areas.mtl` | `protected` areas using the `startTagPrefix` and `endTagPrefix` clauses |
 
-```sh
-# Example 1: Hello World
-swift-mtl generate Examples/01-hello-world.mtl --output /tmp/mtl-examples/
+Example 07 writes three protected areas into a Swift class. With the clauses
+`startTagPrefix('// ')` and `endTagPrefix('// ')`, the markers it produces read
+`// START PROTECTED REGION custom-methods` and
+`// END PROTECTED REGION custom-methods`, and likewise for `custom-init` and
+`custom-description`.
 
-# Example 2: Expressions
-swift-mtl generate Examples/02-expressions.mtl --output /tmp/mtl-examples/
+Examples 01 to 03 and 05 to 07 write to the main output. Example 04 writes its
+content to the files named in its `file` blocks; its main output holds only the
+blank lines between the blocks.
 
-# Example 3: Control Flow
-swift-mtl generate Examples/03-control-flow.mtl --output /tmp/mtl-examples/
+## Running an example from Swift
 
-# Example 4: File Blocks (generates multiple files)
-swift-mtl generate Examples/04-file-blocks.mtl --output /tmp/mtl-examples/
+Parse the template with `MTLParser`, then generate with `MTLGenerator` and one of
+the generation strategies. `MTLInMemoryStrategy` keeps the results in memory
+(the main output is stored under the file name `stdout`);
+`MTLFileSystemStrategy` writes files below a base directory.
 
-# Example 5: Queries
-swift-mtl generate Examples/05-queries.mtl --output /tmp/mtl-examples/
+```swift
+import Foundation
+import MTL
 
-# Example 6: Macros
-swift-mtl generate Examples/06-macros.mtl --output /tmp/mtl-examples/
+let url = URL(fileURLWithPath: "Examples/05-queries.mtl")
+let module = try await MTLParser().parse(url)
 
-# Example 7: Protected Areas
-swift-mtl generate Examples/07-protected-areas.mtl --output /tmp/mtl-examples/
+let strategy = MTLInMemoryStrategy()
+let generator = MTLGenerator(module: module, generationStrategy: strategy)
+try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
+
+let files = await strategy.getGeneratedFiles()
+print(files["stdout"] ?? "")
 ```
 
-## Example Overview
+To write files to disk, use the file system strategy instead:
 
-### 01-hello-world.mtl
-The simplest possible MTL template demonstrating basic text generation.
-
-**Demonstrates:**
-- Module declaration
-- Basic template
-- Plain text output
-
-### 02-expressions.mtl
-Various MTL expression types and operations.
-
-**Demonstrates:**
-- Arithmetic operations (addition, subtraction, multiplication)
-- String concatenation
-- Query definitions
-- Query invocation
-
-### 03-control-flow.mtl
-Control flow statements for conditional and variable logic.
-
-**Demonstrates:**
-- If statements (true/false conditions)
-- If/elseif/else chains
-- Let bindings for variables
-- Variable usage in expressions
-
-### 04-file-blocks.mtl
-Generating multiple output files from a single template.
-
-**Demonstrates:**
-- File blocks with custom names
-- File modes (overwrite, append, create)
-- Character encoding specification
-- Multiple file generation
-
-### 05-queries.mtl
-Reusable query functions for common operations.
-
-**Demonstrates:**
-- Query definitions with parameters
-- Mathematical queries
-- Boolean queries
-- String manipulation queries
-- Query composition
-
-### 06-macros.mtl
-Reusable text blocks with parameters.
-
-**Demonstrates:**
-- Macro definitions
-- Macro parameters
-- Body parameters for content blocks
-- Nested macro invocations
-- Formatting patterns
-
-### 07-protected-areas.mtl
-Protected sections that preserve manual edits across regenerations.
-
-**Demonstrates:**
-- Protected area declarations
-- Custom marker tags
-- Manual edit preservation
-- Code generation patterns
-
-## Output Location
-
-All examples default to outputting in `/tmp/mtl-examples/`. You can specify a different location:
-
-```sh
-swift-mtl generate Examples/01-hello-world.mtl --output my-output-dir/
+```swift
+let strategy = MTLFileSystemStrategy(basePath: "generated")
+let generator = MTLGenerator(module: module, generationStrategy: strategy)
+try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
 ```
 
-## Viewing Results
+The examples declare no model parameters, so the argument list and the model
+dictionary are empty. A template with parameters receives its arguments in
+`arguments`, and input models are supplied in `models`, keyed by alias.
 
-For examples that generate to `stdout` (Examples 1-3, 5-7):
-
-```sh
-cat /tmp/mtl-examples/stdout
-```
-
-For Example 4 (file blocks):
-
-```sh
-ls /tmp/mtl-examples/
-cat /tmp/mtl-examples/greeting.txt
-cat /tmp/mtl-examples/data.txt
-cat /tmp/mtl-examples/info.txt
-```
-
-## Next Steps
-
-After trying these examples:
-1. Modify the templates to experiment with different features
-2. Combine multiple features in your own templates
-3. Try generating from actual model files (XMI/JSON)
-4. Explore the full MTL syntax in the main README.md
+The swift-mtl command-line tool of the swift-modelling package can also run these
+templates.

@@ -2,432 +2,199 @@
 
 [![CI](https://github.com/mipalgu/swift-mtl/actions/workflows/ci.yml/badge.svg)](https://github.com/mipalgu/swift-mtl/actions/workflows/ci.yml)
 [![Documentation](https://github.com/mipalgu/swift-mtl/actions/workflows/documentation.yml/badge.svg)](https://github.com/mipalgu/swift-mtl/actions/workflows/documentation.yml)
-[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fmipalgu%2Fswift-mtl%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/mipalgu/swift-mtl)
-[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fmipalgu%2Fswift-mtl%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/mipalgu/swift-mtl)
 
-A Swift implementation of MTL (Model-to-Text Language) with a complete parser, runtime, and command-line tool.
+A Swift library for model-to-text transformation with the OMG MOFM2T / Acceleo template language.
 
 ## Overview
 
-swift-mtl provides comprehensive support for model-to-text transformation using the MTL/Acceleo syntax. It enables parsing, validation, and execution of MTL templates to generate code, documentation, and other textual artifacts from models.
+swift-mtl parses MTL (Model-to-Text Language) modules and executes their templates to generate code, documentation, and other text from models. It provides a single library product, `MTL`. Expressions inside templates are [swift-aql](https://github.com/mipalgu/swift-aql) expression nodes built by the MTL parser, and models come from [swift-ecore](https://github.com/mipalgu/swift-ecore).
+
+This package contains no executable. The `swift-mtl` command-line tool is provided by the separate [swift-modelling](https://github.com/mipalgu/swift-modelling) package.
 
 ## Features
 
-- **Complete MTL Parser** - Parse MTL templates from text files with full syntax support
-- **MTL Runtime** - Execute templates with high performance using Swift's concurrent execution model
-- **CLI Tool** - Generate, parse, and validate MTL templates from the command line
-- **Model Support** - Load models from XMI and JSON formats
-- **Expression Language** - Full AQL (Acceleo Query Language) integration for expressions
-- **Advanced Features** - File blocks, protected areas, queries, macros, and more
+- Parser for the Acceleo dialect of MTL: module headers, `extends` and `import`, templates, queries, macros, `for`, `if`/`elseif`/`else`, `let`, `file`, and `protected` blocks, comments, and documentation comments
+- Template visibility (`public`, `protected`, `private`), guards, post-expressions, `overrides`, and overloading by parameter types
+- Module resolution through search paths, with `import` and `extends` linked recursively and cycles reported as errors
+- Expression syntax including collection literals, `->` calls, lambdas, type operations, and qualified names
+- The MOFM2T whitespace rule for lines that contain only block tags
+- A generator with pluggable output strategies: in-memory (`MTLInMemoryStrategy`) and file system (`MTLFileSystemStrategy`)
+- Protected areas written with configurable start and end prefixes
 
 ## Installation
 
-### Building from Source
-
-```sh
-git clone <repository-url>
-cd swift-mtl
-swift build --scratch-path /tmp/build-swift-mtl -c release
-```
-
-The executable will be built at `/tmp/build-swift-mtl/release/swift-mtl`.
-
-### Adding to PATH (Optional)
-
-```sh
-# Add to your shell profile (~/.zshrc, ~/.bashrc, etc.)
-export PATH="/tmp/build-swift-mtl/release:$PATH"
-```
-
-## Quick Start
-
-### 1. Create an MTL Template
-
-Create a file `hello.mtl`:
-
-```mtl
-[module HelloWorld('http://example.com')]
-
-[template main()]
-Hello, World!
-This is a simple MTL template.
-[/template]
-```
-
-### 2. Generate Output
-
-```sh
-swift-mtl generate hello.mtl --output generated/
-```
-
-This will create `generated/stdout` containing the generated text.
-
-### 3. Validate Templates
-
-```sh
-swift-mtl validate hello.mtl
-# Output: ✓ hello.mtl: Valid
-```
-
-## Usage
-
-### Generate Command
-
-Generate text from models using MTL templates.
-
-```sh
-swift-mtl generate TEMPLATE [options]
-```
-
-**Arguments:**
-- `TEMPLATE` - Path to MTL template file (.mtl)
-
-**Options:**
-- `--model PATH` - Input model file (XMI or JSON, can be specified multiple times)
-- `--output, -o PATH` - Output directory for generated files (default: ".")
-- `--template, -t NAME` - Main template name to execute (auto-detect if not specified)
-- `--verbose, -v` - Enable verbose output
-
-**Examples:**
-
-```sh
-# Basic generation
-swift-mtl generate template.mtl --output generated/
-
-# With input models
-swift-mtl generate template.mtl \
-  --model input.xmi \
-  --output generated/
-
-# Multiple models
-swift-mtl generate template.mtl \
-  --model families.xmi \
-  --model departments.xmi \
-  --output generated/
-
-# Specify main template
-swift-mtl generate template.mtl \
-  --model input.xmi \
-  --template generateAll \
-  --output generated/
-
-# Verbose output
-swift-mtl generate template.mtl \
-  --model input.xmi \
-  --output generated/ \
-  --verbose
-```
-
-### Parse Command
-
-Parse and display MTL template structure.
-
-```sh
-swift-mtl parse TEMPLATE... [options]
-```
-
-**Arguments:**
-- `TEMPLATE...` - One or more MTL template files to parse
-
-**Options:**
-- `--detailed, -d` - Show detailed template information
-- `--json, -j` - Output in JSON format
-- `--verbose, -v` - Enable verbose output
-
-**Examples:**
-
-```sh
-# Parse single template
-swift-mtl parse template.mtl
-
-# Parse multiple templates
-swift-mtl parse template1.mtl template2.mtl
-
-# Detailed output
-swift-mtl parse template.mtl --detailed
-
-# JSON output
-swift-mtl parse template.mtl --json
-```
-
-### Validate Command
-
-Validate MTL template syntax.
-
-```sh
-swift-mtl validate TEMPLATE... [options]
-```
-
-**Arguments:**
-- `TEMPLATE...` - One or more MTL template files to validate
-
-**Options:**
-- `--verbose, -v` - Show detailed validation information
-
-**Examples:**
-
-```sh
-# Validate single template
-swift-mtl validate template.mtl
-
-# Validate multiple templates
-swift-mtl validate template1.mtl template2.mtl template3.mtl
-
-# Verbose validation
-swift-mtl validate template.mtl --verbose
-```
-
-## MTL Template Syntax
-
-### Module Declaration
-
-Every MTL file must start with a module declaration:
-
-```mtl
-[module ModuleName('http://metamodel/uri')]
-```
-
-### Templates
-
-Templates define text generation logic:
-
-```mtl
-[template templateName(param : Type)]
-Text content and [param/] expressions
-[/template]
-```
-
-**Template Modifiers:**
-- Visibility: `public` (default), `protected`, `private`
-- Main template: `[template main() ? main()]`
-
-### Expressions
-
-```mtl
-[variableName/]                    // Variable reference
-[object.property/]                 // Navigation
-[1 + 2 + 3/]                       // Arithmetic
-[firstName + ' ' + lastName/]      // String concatenation
-['literal string'/]                // String literal
-```
-
-### Control Flow
-
-**If Statement:**
-```mtl
-[if (condition)]
-  Text when true
-[elseif (otherCondition)]
-  Text when elseif true
-[else]
-  Text when false
-[/if]
-```
-
-**For Loop:**
-```mtl
-[for (item in collection) separator(', ')]
-  [item/]
-[/for]
-```
-
-**Let Binding:**
-```mtl
-[let temp = expression]
-  Use [temp/] here
-[/let]
-```
-
-### File Blocks
-
-Generate to specific files:
-
-```mtl
-[file ('filename.txt', 'overwrite', 'UTF-8')]
-File content here
-[/file]
-```
-
-**File Modes:**
-- `overwrite` - Replace existing file
-- `append` - Append to existing file
-- `create` - Create only if doesn't exist
-
-### Protected Areas
-
-Preserve manually edited sections:
-
-```mtl
-[protected ('id', 'start-tag', 'end-tag')]
-Default content
-[/protected]
-```
-
-### Queries
-
-Define reusable query functions:
-
-```mtl
-[query getName(obj : Type) : String = obj.name/]
-
-[query fullName(first : String, last : String) : String =
-  first + ' ' + last/]
-```
-
-### Macros
-
-Define reusable text blocks with parameters:
-
-```mtl
-[macro wrapper(content : Body)]
-<div>
-  [content/]
-</div>
-[/macro]
-
-// Usage:
-[wrapper()]
-  Inner content
-[/wrapper]
-```
-
-## Library Usage
-
-### Swift Package
-
-Add swift-mtl as a dependency in your `Package.swift`:
+Add swift-mtl to the dependencies of your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/your-org/swift-mtl", from: "1.0.0")
+    .package(url: "https://github.com/mipalgu/swift-mtl", from: "0.1.4"),
 ],
 targets: [
     .target(
-        name: "YourTarget",
+        name: "MyGenerator",
         dependencies: [
             .product(name: "MTL", package: "swift-mtl")
         ]
-    )
+    ),
 ]
 ```
 
-### Programmatic Usage
+Adjust the version requirement to the release you want to use.
+
+The package itself depends on [swift-collections](https://github.com/apple/swift-collections) (`OrderedCollections`), [swift-ecore](https://github.com/mipalgu/swift-ecore) (`ECore`, `EMFBase`, `OCL`), and [swift-aql](https://github.com/mipalgu/swift-aql) (`AQL`).
+
+## Quick Start
+
+Write a template, for example `hello.mtl`:
+
+```mtl
+[comment encoding = UTF-8 /]
+[module hello('http://www.eclipse.org/emf/2002/Ecore')/]
+
+[template public main(name : String)]
+Hello, [name/]!
+[/template]
+```
+
+Parse it and generate text into memory:
 
 ```swift
+import ECore
 import MTL
-import Foundation
 
-// Parse MTL template
-let parser = MTLParser()
-let templateURL = URL(fileURLWithPath: "template.mtl")
-let module = try await parser.parse(templateURL)
+let module = try await MTLParser().parse(URL(fileURLWithPath: "hello.mtl"))
 
-// Create generator with output strategy
-let outputDir = URL(fileURLWithPath: "generated")
-let strategy = MTLFileSystemStrategy(basePath: outputDir.path)
+let strategy = MTLInMemoryStrategy()
 let generator = MTLGenerator(module: module, generationStrategy: strategy)
-
-// Execute generation
 try await generator.generate(
     mainTemplate: "main",
-    arguments: [],
+    arguments: ["World"],
     models: [:]
 )
 
-// Access statistics
-print("Templates executed: \(generator.statistics.templatesExecuted)")
-print("Execution time: \(generator.statistics.executionTime)s")
+let files = await strategy.getGeneratedFiles()
+print(files["stdout"] ?? "")   // the main output is stored under "stdout"
 ```
 
-## Testing
+`MTLParser().parse(_:filename:)` parses template source held in a string instead of a file. Templates that write `[file (...)]` blocks add one entry per file to the dictionary. To write files to disk, use `MTLFileSystemStrategy(basePath:)` in place of `MTLInMemoryStrategy`.
 
-Run the comprehensive test suite (169 tests):
+## Syntax Tour
 
-```sh
-cd swift-mtl
-swift test --scratch-path /tmp/build-swift-mtl
+This is a condensed overview of the syntax. All constructs shown here are covered by the tests.
+
+```mtl
+[comment encoding = UTF-8 /]
+[module shapes('http://www.eclipse.org/emf/2002/Ecore') extends common::base/]
+[import common::naming/]
+
+[** Generates a class for each EClass. @main **/]
+[template public main(p : ecore::EPackage)]
+[for (c : ecore::EClass | p.eClassifiers->select(oclIsKindOf(ecore::EClass))) separator(', ') before('Classes: ') after('.')]
+[i/]. [c.name/]
+[/for]
+[file ('classes.txt', 'overwrite', 'UTF-8')]
+[if (p.name.size() > 0)]Package [p.name/][else]Anonymous[/if]
+[let n = 'x'][n/][/let]
+[/file]
+[/template]
+
+[query public describe(c : ecore::EClass) : String = c.name + '!'/]
+
+[macro wrap(body : Body)]<[body/]>[/macro]
 ```
 
-### Custom Scratch Path
+Key points:
 
-Override the scratch directory using the `SWIFT_MTL_SCRATCH_PATH` environment variable:
+- Module header: `[module name('uri1', 'uri2')/]`, with at least one metamodel URI. `extends` names a parent module; `[import a::b::c/]` imports one. Both map `a::b::c` to `a/b/c.mtl`.
+- Comments: `[comment text /]`, `[comment]...[/comment]`, `[-- text]`, and documentation comments `[** ... **/]` that attach to the next template, query, or macro. `[comment @main /]` inside a template, or `@main` in its documentation comment, marks the main template.
+- Templates: `[template visibility name(params) ? (guard) post (expr) overrides other]`. Clauses may appear in any order.
+- Queries and macros: `[query name(p : T) : R = expr/]` and `[macro name(p : T, body : Body)]...[/macro]`. Macros are called as `[name(args)]body[/name]`.
+- Loops: `[for (x : T | collection) separator(s) before(b) after(a)]`. The loop variable type and binding are optional, and the implicit counter `i` is available in the body.
+- Invocations: `[name(args)/]`, `[x.name(a)/]`, and `[self.name()/]`. Resolution looks at the current module, its parents, its imports, and then the AQL library; among overloads the nearest parameter types win.
+- Literal brackets: `['['/]` and `[']'/]`.
+- Protected areas: `[protected ('id', 'startPrefix', 'endPrefix')]...[/protected]`.
 
-```sh
-export SWIFT_MTL_SCRATCH_PATH=/custom/build/path
-swift test --scratch-path /custom/build/path
+The full syntax reference is in [SYNTAX.md](SYNTAX.md).
+
+### Imports, extends, and the module resolver
+
+`[import qualified::module::name/]` and `extends` look modules up through `MTLModuleResolver`. It tries the directory of the importing file first and then each search path in order. Pass search paths to the parser:
+
+```swift
+let parser = MTLParser(searchPaths: [URL(fileURLWithPath: "templates")])
+let module = try await parser.parse(URL(fileURLWithPath: "app/main.mtl"))
 ```
 
-See `Tests/MTLTests/README.md` for detailed test documentation.
+`parse(_:)` with a file URL parses and links imports and parents; `parseWithoutLinking(_:)` skips linking, and `link(_:relativeTo:)` links a module parsed from source text. `MTLModuleLoader` loads each file once per call. A missing module throws `MTLModuleResolutionError.notFound`, and a cycle throws `.cycle`. Imports are not transitive, and only public elements are visible through an import; protected elements are visible to extending modules.
 
 ## Project Structure
 
 ```
 swift-mtl/
-├── Sources/
-│   ├── MTL/                    # MTL library
-│   │   ├── MTLParser.swift     # Parser (lexer + syntax parser)
-│   │   ├── MTLModule.swift     # AST: Module, Template, Query, Macro
-│   │   ├── MTLStatement.swift  # AST: Statements
-│   │   ├── MTLGenerator.swift  # Template execution engine
-│   │   └── MTLGenerationStrategy.swift  # Output strategies
-│   └── swift-mtl/              # CLI executable
-│       ├── SwiftMTL.swift      # Main entry point
-│       └── Commands/           # Command implementations
-│           ├── GenerateCommand.swift
-│           ├── ParseCommand.swift
-│           └── ValidateCommand.swift
-├── Tests/
-│   └── MTLTests/               # Test suite (169 tests)
-│       ├── MTLParserTests.swift
-│       ├── CLIIntegrationTests.swift
-│       ├── TestHelpers.swift
-│       └── Resources/templates/  # Test templates
-└── Package.swift
+  Package.swift
+  Sources/MTL/
+    MTL.swift                    Placeholder source file
+    MTLParser.swift              Lexer and parser for MTL modules
+    MTLSyntax.swift              Keywords, reserved names, and markers of the syntax
+    MTLModule.swift              Module model: metamodel URIs, templates, queries, macros, imports
+    MTLModuleLoader.swift        Module resolver and loader for imports and extends
+    MTLTemplate.swift            Templates and their visibility
+    MTLQuery.swift               Queries
+    MTLMacro.swift               Macros
+    MTLVariable.swift            Parameter and variable declarations
+    MTLBlock.swift               Blocks of statements
+    MTLStatement.swift           Statements: text, for, if, let, file, protected
+    MTLExpression.swift          Wrapper around swift-aql expressions
+    MTLExpressions.swift         MTL-specific expression support
+    MTLInvocation.swift          Invocable templates, queries, and macros
+    MTLTypeMatcher.swift         Parameter type matching for overloads
+    MTLGenerator.swift           The generation engine
+    MTLGenerationStrategy.swift  Output strategies (in-memory and file system)
+    MTLExecutionContext.swift    Execution state during generation
+    MTLWriter.swift              Output accumulation with indentation
+    MTLIndentation.swift         Indentation handling
+    MTLStandaloneLines.swift     The whitespace rule for block-tag lines
+    MTLProtectedAreaManager.swift Protected area content
+    MTLErrors.swift              Runtime errors
+    MTL.docc/                    DocC documentation
+  Tests/MTLTests/                Swift Testing suites, with Support and Resources
+  Examples/                      Example templates (01 to 07)
 ```
 
-## Performance
+## Testing
 
-The swift-mtl runtime provides excellent performance:
-- Fast parsing with hand-written recursive descent parser
-- Efficient template execution using Swift's concurrency model
-- Minimal overhead for expression evaluation
-- Typical generation time: 1-5ms for simple templates
+```sh
+swift test
+```
+
+The test suites are described in [Tests/MTLTests/README.md](Tests/MTLTests/README.md).
+
+## Known Limits
+
+- The released swift-aql lacks most of the Acceleo standard library. String services (`toUpperFirst`, `replaceAll`, `tokenize`, and similar), collection services (`sortedBy`, `asSet`, `including`, `sum`, `reverse`, `at`, and similar), and `div` parse but do not yet evaluate. `toString` of a number prints `Optional(7)`, `trim()` does not remove line breaks, `String + Integer` is a type error, and method-style calls on collections such as `coll.size()` do not evaluate (use `coll->size()`). Evaluation arrives with the next swift-aql release.
+- Qualified type names in `oclIsKindOf(ecore::EClass)` are passed as the full string, and the released AQL compares unqualified names for dynamic objects only.
+- Automatic scanning of protected areas in existing files, deferred blocks, tagged-block merge, and post-processors are not available.
+- Protected area markers are `START PROTECTED REGION id` and `END PROTECTED REGION id` preceded by the configured prefixes; there are no default prefixes derived from the file extension.
+- The charset of a `file` block is recorded and passed to the generation strategy, but the bundled writers always write UTF-8.
+- Macros have no visibility.
 
 ## Compatibility
 
-- **Swift Version**: 6.0+
-- **Platform**: macOS 15.0+
-- **MTL Syntax**: Compatible with Acceleo MTL/OCL standard
+Package.swift requires swift-tools 6.0 and declares macOS 15. The code is portable Swift 6, but only the platforms covered by the repository's CI workflows are exercised.
 
-## Dependencies
+## Licence
 
-- [swift-ecore](https://github.com/mipalgu/swift-ecore) - EMF/Ecore implementation for model loading
-- [swift-aql](https://github.com/your-org/swift-aql) - AQL expression evaluation
-- [swift-collections](https://github.com/apple/swift-collections) - OrderedDictionary
-- [swift-argument-parser](https://github.com/apple/swift-argument-parser) - CLI argument parsing
-
-## License
-
-Copyright © 2025 Rene Hexel. All rights reserved.
-
-## Contributing
-
-Contributions are welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
-
-## Support
-
-For issues, questions, or feature requests, please open an issue on GitHub.
+Copyright (c) 2025, 2026 Rene Hexel. Distributed under a BSD-style licence with an advertising clause, or alternatively under the GNU General Public License version 2 or later, at your option. See [LICENCE](LICENCE) for the full wording.
 
 ## References
 
-This implementation is based on the following standards and technologies:
+- [OMG MOFM2T (MOF Model-to-Text Transformation)](https://www.omg.org/spec/MOFM2T/)
+- [Acceleo](https://eclipse.dev/acceleo/)
+- [OMG OCL (Object Constraint Language)](https://www.omg.org/spec/OCL/)
 
-- [OMG MOFM2T (MOF Model-to-Text Transformation)](https://www.omg.org/spec/MOFM2T/) - The model-to-text standard
-- [Eclipse Acceleo](https://eclipse.dev/acceleo/) - The reference MTL implementation
-- [OMG OCL (Object Constraint Language)](https://www.omg.org/spec/OCL/) - Expression language for queries
-- [Eclipse Modeling Framework (EMF)](https://eclipse.dev/emf/) - The metamodelling foundation
+### Related Packages
+
+- [swift-ecore](https://github.com/mipalgu/swift-ecore): EMF/Ecore metamodelling
+- [swift-aql](https://github.com/mipalgu/swift-aql): AQL model queries
+- [swift-atl](https://github.com/mipalgu/swift-atl): ATL model transformations
+- [swift-modelling](https://github.com/mipalgu/swift-modelling): the toolkit that provides the `swift-mtl` command-line tool
