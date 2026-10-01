@@ -122,6 +122,44 @@ public struct MTLModule: Sendable, Equatable, Hashable {
     /// text to files. Common values include "UTF-8", "ISO-8859-1", etc.
     public let encoding: String
 
+    /// The namespace URIs of the metamodels declared in the module header.
+    ///
+    /// The header `[module name('uri1', 'uri2')/]` lists the metamodels the
+    /// module is written against. The URIs are bound to registered packages by
+    /// their `nsURI` when the module is executed against models.
+    public let metamodelURIs: [String]
+
+    /// Further templates that share a name with an entry of ``templates``.
+    ///
+    /// Templates may be overloaded by parameter types. The first template of a
+    /// given name is kept in ``templates``; all others are listed here in
+    /// declaration order. Use ``templates(named:)`` to see all of them.
+    public let templateOverloads: [MTLTemplate]
+
+    /// Further queries that share a name with an entry of ``queries``.
+    ///
+    /// The first query of a given name is kept in ``queries``; all others are
+    /// listed here in declaration order. Use ``queries(named:)`` to see all of
+    /// them.
+    public let queryOverloads: [MTLQuery]
+
+    /// The location of the file the module was loaded from, if any.
+    ///
+    /// Imported modules are located relative to this file first.
+    public let location: URL?
+
+    /// The modules named by ``imports``, once they have been loaded.
+    ///
+    /// Empty until the module has been linked with ``linking(imports:extending:)``
+    /// (which `MTLParser.parse(_:)` and `MTLModuleLoader` do).
+    public let importedModules: [MTLModule]
+
+    /// The module named by ``extends``, once it has been loaded.
+    ///
+    /// Held in an array of zero or one element so that the value type can
+    /// contain itself. Use ``extendedModule`` to read it.
+    private let linkedExtends: [MTLModule]
+
     // MARK: - Initialisation
 
     /// Creates a new MTL module with the specified configuration.
@@ -135,6 +173,12 @@ public struct MTLModule: Sendable, Equatable, Hashable {
     ///   - queries: Queries indexed by their names (default: empty)
     ///   - macros: Macros indexed by their names (default: empty)
     ///   - encoding: Default character encoding (default: "UTF-8")
+    ///   - metamodelURIs: Namespace URIs of the declared metamodels (default: empty)
+    ///   - templateOverloads: Templates that overload a name in `templates` (default: empty)
+    ///   - queryOverloads: Queries that overload a name in `queries` (default: empty)
+    ///   - location: The file the module was loaded from (default: nil)
+    ///   - importedModules: The loaded imports (default: empty)
+    ///   - extendedModule: The loaded parent module (default: nil)
     ///
     /// - Precondition: The module name must be a non-empty string
     public init(
@@ -145,7 +189,13 @@ public struct MTLModule: Sendable, Equatable, Hashable {
         templates: OrderedDictionary<String, MTLTemplate> = [:],
         queries: OrderedDictionary<String, MTLQuery> = [:],
         macros: OrderedDictionary<String, MTLMacro> = [:],
-        encoding: String = "UTF-8"
+        encoding: String = "UTF-8",
+        metamodelURIs: [String] = [],
+        templateOverloads: [MTLTemplate] = [],
+        queryOverloads: [MTLQuery] = [],
+        location: URL? = nil,
+        importedModules: [MTLModule] = [],
+        extendedModule: MTLModule? = nil
     ) {
         precondition(!name.isEmpty, "Module name must not be empty")
 
@@ -157,6 +207,71 @@ public struct MTLModule: Sendable, Equatable, Hashable {
         self.queries = queries
         self.macros = macros
         self.encoding = encoding
+        self.metamodelURIs = metamodelURIs
+        self.templateOverloads = templateOverloads
+        self.queryOverloads = queryOverloads
+        self.location = location
+        self.importedModules = importedModules
+        self.linkedExtends = extendedModule.map { [$0] } ?? []
+    }
+
+    // MARK: - Linking
+
+    /// The loaded parent module, if the module extends one and it has been linked.
+    public var extendedModule: MTLModule? {
+        linkedExtends.first
+    }
+
+    /// Returns a copy of the module with its imports and parent module attached.
+    ///
+    /// - Parameters:
+    ///   - imports: The loaded modules named by ``imports``.
+    ///   - extendedModule: The loaded module named by ``extends``, if any.
+    /// - Returns: A module that is identical except for the attached modules.
+    public func linking(imports: [MTLModule], extending extendedModule: MTLModule?) -> MTLModule {
+        MTLModule(
+            name: name,
+            metamodels: metamodels,
+            extends: extends,
+            imports: self.imports,
+            templates: templates,
+            queries: queries,
+            macros: macros,
+            encoding: encoding,
+            metamodelURIs: metamodelURIs,
+            templateOverloads: templateOverloads,
+            queryOverloads: queryOverloads,
+            location: location,
+            importedModules: imports,
+            extendedModule: extendedModule
+        )
+    }
+
+    /// Returns every template of the given name declared in this module.
+    ///
+    /// - Parameter name: The template name.
+    /// - Returns: The template in ``templates`` followed by its overloads, in declaration order.
+    public func templates(named name: String) -> [MTLTemplate] {
+        (templates[name].map { [$0] } ?? []) + templateOverloads.filter { $0.name == name }
+    }
+
+    /// Returns every query of the given name declared in this module.
+    ///
+    /// - Parameter name: The query name.
+    /// - Returns: The query in ``queries`` followed by its overloads, in declaration order.
+    public func queries(named name: String) -> [MTLQuery] {
+        (queries[name].map { [$0] } ?? []) + queryOverloads.filter { $0.name == name }
+    }
+
+    /// Whether two modules denote the same module declaration.
+    ///
+    /// Modules are the same if they have the same name and were loaded from
+    /// the same location (or both have no location).
+    ///
+    /// - Parameter other: The module to compare with.
+    /// - Returns: `true` if both denote the same declaration.
+    public func isSameModule(as other: MTLModule) -> Bool {
+        name == other.name && location == other.location
     }
 
     // MARK: - Equatable
@@ -179,6 +294,11 @@ public struct MTLModule: Sendable, Equatable, Hashable {
             && lhs.queries == rhs.queries
             && lhs.macros == rhs.macros
             && lhs.encoding == rhs.encoding
+            && lhs.metamodelURIs == rhs.metamodelURIs
+            && lhs.templateOverloads == rhs.templateOverloads
+            && lhs.queryOverloads == rhs.queryOverloads
+            && lhs.importedModules == rhs.importedModules
+            && lhs.extendedModule == rhs.extendedModule
     }
 
     // MARK: - Hashable
@@ -207,6 +327,11 @@ public struct MTLModule: Sendable, Equatable, Hashable {
         hasher.combine(queries.keys.sorted())
         hasher.combine(macros.keys.sorted())
         hasher.combine(encoding)
+        hasher.combine(metamodelURIs)
+        hasher.combine(templateOverloads)
+        hasher.combine(queryOverloads)
+        hasher.combine(importedModules)
+        hasher.combine(extendedModule)
 
         // Hash template values
         for (key, template) in templates.sorted(by: { $0.key < $1.key }) {
