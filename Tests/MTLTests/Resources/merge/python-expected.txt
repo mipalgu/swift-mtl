@@ -1,0 +1,15 @@
+import os
+import sys
+
+# @generated
+class Greeter:
+    # @generated NOT
+    def hello(self):
+        return "hello, user"
+
+    # @generated
+    def goodbye(self):
+        return "goodbye"
+
+    def custom(self):
+        return sys.argv

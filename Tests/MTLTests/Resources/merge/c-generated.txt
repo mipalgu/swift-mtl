@@ -1,0 +1,20 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+/* @generated */
+struct point {
+    int x;
+    int y;
+};
+
+/* @generated */
+int point_sum(struct point p)
+{
+    return p.x + p.y;
+}
+
+/* @generated */
+int point_product(struct point p)
+{
+    return p.x * p.y;
+}

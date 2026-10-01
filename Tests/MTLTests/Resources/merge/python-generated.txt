@@ -1,0 +1,11 @@
+import os
+
+# @generated
+class Greeter:
+    # @generated
+    def hello(self):
+        return "hello"
+
+    # @generated
+    def goodbye(self):
+        return "goodbye"

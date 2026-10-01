@@ -1,0 +1,18 @@
+import Foundation
+
+/// A person.
+/// @generated
+public struct Person {
+    /// @generated
+    public var name: String
+    /// @generated
+    public var age: Int
+    /// @generated
+    public func describe() -> String {
+        "\(name) (\(age))"
+    }
+    /// @generated
+    public func birthday() {
+        print("Happy birthday")
+    }
+}
