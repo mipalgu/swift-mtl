@@ -258,6 +258,27 @@ public final class MTLExecutionContext: Sendable {
         aqlContext.setVariable(name, value: value)
     }
 
+    /// Sets a variable that every template, query and macro can read.
+    ///
+    /// A global variable lives in the outermost scope, so it outlives every scope that is
+    /// active when it is set. Template parameters and `let` variables of the same name
+    /// shadow it inside their own scope; the global itself is never changed by them. Setting
+    /// a global again replaces its value, including any inner binding of the same name.
+    ///
+    /// - Parameters:
+    ///   - name: The variable name
+    ///   - value: The variable value (nil for null)
+    public func setGlobalVariable(_ name: String, value: (any EcoreValue)?) {
+        if scopeStack.isEmpty {
+            variables[name] = value
+        } else {
+            scopeStack[0][name] = value
+            for index in scopeStack.indices.dropFirst() { scopeStack[index][name] = nil }
+            variables[name] = nil
+        }
+        aqlContext.setGlobalVariable(name, value: value)
+    }
+
     /// Retrieves a variable from the current or enclosing scopes.
     ///
     /// Variables are looked up starting from the current scope and working
