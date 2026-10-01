@@ -220,6 +220,7 @@ public final class MTLExecutionContext: Sendable {
             value: MTLRuntimeHandle(runtime: self)
         )
 
+        self.aqlContext.register(MTLFileServices())
         for provider in serviceProviders {
             self.aqlContext.register(provider)
         }
@@ -460,9 +461,12 @@ public final class MTLExecutionContext: Sendable {
     ///   - url: The file path or URL
     ///   - mode: The file opening mode (overwrite, append, create)
     ///   - charset: The character encoding (typically "UTF-8")
+    ///   - options: The per-file options (default: none)
     ///
     /// - Throws: `MTLExecutionError.fileError` if the file cannot be opened
-    public func openFile(url: String, mode: MTLOpenMode, charset: String) async throws {
+    public func openFile(
+        url: String, mode: MTLOpenMode, charset: String, options: MTLFileOptions = MTLFileOptions()
+    ) async throws {
         let newWriter = try await generationStrategy.createWriter(
             url: url,
             mode: mode,
@@ -472,6 +476,8 @@ public final class MTLExecutionContext: Sendable {
 
         // Preserve the protected areas of a file that is about to be overwritten
         var state = MTLDeferredState()
+        state.fileURL = url
+        state.fileOptions = options
         if mode == .overwrite, let existing = await generationStrategy.existingContent(url: url) {
             state.protectedAreasBeforeScan = await protectedAreaManager.getAllContent()
             await protectedAreaManager.scanContent(existing)
@@ -503,8 +509,11 @@ public final class MTLExecutionContext: Sendable {
             await fileWriter.replaceContent(resolved)
             regions = emitted
         }
+        let mergeConfiguration = module.mergeConfiguration.flatMap { configuration in
+            state.fileOptions.merge && configuration.applies(toFile: state.fileURL) ? configuration : nil
+        }
         await fileWriter.setGenerationInfo(
-            mergeConfiguration: module.mergeConfiguration, emittedRegions: regions)
+            mergeConfiguration: mergeConfiguration, emittedRegions: regions)
 
         // Forget the protected areas scanned from this file's previous version
         if let before = state.protectedAreasBeforeScan {
@@ -517,6 +526,19 @@ public final class MTLExecutionContext: Sendable {
         switchCollectedVariables(from: state, to: deferredStates.last)
 
         try await generationStrategy.finalizeWriter(fileWriter)
+    }
+
+    /// Tells whether a file exists as seen by the generation strategy.
+    ///
+    /// - Parameter path: The file path, relative to the generation base path unless absolute.
+    /// - Returns: `true` if a file exists at the path.
+    public func fileExists(_ path: String) async -> Bool {
+        await generationStrategy.fileExists(url: path)
+    }
+
+    /// The force overwrite option of the generation strategy.
+    public var forceOverwrite: Bool {
+        generationStrategy.generatorOptions.forceOverwrite
     }
 
     // MARK: - Deferred Blocks

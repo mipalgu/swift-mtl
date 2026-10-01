@@ -1671,6 +1671,17 @@ private actor MTLSyntaxParser {
             charset = try parseExpression()
         }
 
+        // Parse optional 'key=value' file options
+        var options = MTLFileOptions()
+        while case .comma = current()?.type {
+            advance()  // Consume comma
+            guard case .stringLiteral(let option) = current()?.type else {
+                throw error("Expected a 'key=value' string literal as file option")
+            }
+            advance()
+            try applyFileOption(option, to: &options)
+        }
+
         try expect(.rightParen)
         try expect(.rightBracket)
 
@@ -1682,7 +1693,33 @@ private actor MTLSyntaxParser {
         try expectKeyword("file")
         try expect(.rightBracket)
 
-        return MTLFileStatement(url: urlExpr, mode: mode, modeExpression: modeExpression, charset: charset, body: body)
+        return MTLFileStatement(
+            url: urlExpr, mode: mode, modeExpression: modeExpression, charset: charset,
+            options: options, body: body)
+    }
+
+    /// Applies one `key=value` option of a `file` block.
+    ///
+    /// - Parameters:
+    ///   - option: The option text.
+    ///   - options: The options to update.
+    /// - Throws: `MTLParseError` if the option is malformed or unknown.
+    private func applyFileOption(_ option: String, to options: inout MTLFileOptions) throws {
+        guard let separator = option.firstIndex(of: MTLFileOptionKeys.assignment) else {
+            throw error("Expected key=value file option, got '\(option)'")
+        }
+        let key = String(option[..<separator])
+        let value = String(option[option.index(after: separator)...])
+        switch key {
+        case MTLFileOptionKeys.merge:
+            switch value {
+            case MTLFileOptionKeys.enabled: options.merge = true
+            case MTLFileOptionKeys.disabled: options.merge = false
+            default: throw error("The '\(key)' file option needs 'true' or 'false', got '\(value)'")
+            }
+        default:
+            throw error("Unknown file option '\(key)'")
+        }
     }
 
     /// Parses a protected area: [protected (id, startPrefix, endPrefix)]...[/protected]
@@ -2784,6 +2821,7 @@ extension MTLSyntaxParser {
         }
 
         var syntax = MTLMergeSyntax.defaults(for: strategy)
+        var filePatterns: [String] = []
         for option in arguments[optionStart...] {
             guard let separator = option.firstIndex(of: MTLMergeOptionKeys.assignment) else {
                 throw error("Expected key=value merge option, got '\(option)'")
@@ -2808,12 +2846,17 @@ extension MTLSyntaxParser {
                     throw error("The opener option needs a single character")
                 }
                 syntax.opener = opener
+            case MTLMergeOptionKeys.files:
+                filePatterns = value.split(separator: MTLMergeOptionKeys.filePatternSeparator).map(String.init)
+                guard !filePatterns.isEmpty else {
+                    throw error("The files option needs at least one pattern")
+                }
             default:
                 throw error("Unknown merge option '\(key)'")
             }
         }
         return MTLMergeConfiguration(
             commentStart: arguments[0], commentEnd: arguments[1], generatedTag: arguments[2],
-            keepTag: arguments[3], strategy: strategy, syntax: syntax)
+            keepTag: arguments[3], strategy: strategy, syntax: syntax, filePatterns: filePatterns)
     }
 }
