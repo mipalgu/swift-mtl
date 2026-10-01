@@ -185,14 +185,13 @@ struct MTLForAndFileSyntaxTests {
         #expect(files["log.txt"] == "second;")
     }
 
-    @Test("Create mode fails if the file exists")
+    @Test("Create mode leaves an existing file untouched")
     @MainActor
-    func createGeneration() async {
-        await #expect(throws: MTLExecutionError.self) {
-            try await MTLTestSupport.run(Self.module("""
-                [file ('log.txt', false)]first;[/file][file ('log.txt', 'create')]second;[/file]
-                """))
-        }
+    func createGeneration() async throws {
+        let files = try await MTLTestSupport.run(Self.module("""
+            [file ('log.txt', false)]first;[/file][file ('log.txt', 'create')]second;[/file]
+            """))
+        #expect(files["log.txt"] == "first;")
     }
 
     @Test("A computed mode is evaluated when the file is opened")
