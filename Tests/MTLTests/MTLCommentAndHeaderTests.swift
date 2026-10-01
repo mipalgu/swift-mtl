@@ -6,6 +6,7 @@
 //  Copyright (c) 2026 Rene Hexel. All rights reserved.
 //
 
+import ECore
 import Testing
 
 @testable import MTL
@@ -216,5 +217,30 @@ struct MTLCommentAndHeaderTests {
         await #expect(throws: MTLParseError.self) {
             try await MTLTestSupport.parse("[module m('u')/][import /]")
         }
+    }
+}
+
+@Suite("MTL Metamodel Binding")
+struct MTLMetamodelBindingTests {
+
+    @Test("Header URIs are unbound until packages are supplied")
+    func unboundInitially() async throws {
+        let module = try await MTLTestSupport.parse("[module m('http://a', 'http://b')/]")
+        #expect(module.metamodels.isEmpty)
+        #expect(module.unboundMetamodelURIs == ["http://a", "http://b"])
+    }
+
+    @Test("Packages are bound by namespace URI, including subpackages")
+    func bindsByNamespaceURI() async throws {
+        let module = try await MTLTestSupport.parse("[module m('http://a', 'http://b', 'http://c')/]")
+        let nested = EPackage(name: "nested", nsURI: "http://b")
+        let root = EPackage(name: "root", nsURI: "http://a", eSubpackages: [nested])
+        let unrelated = EPackage(name: "other", nsURI: "http://other")
+
+        let bound = module.binding(to: [root, unrelated])
+        #expect(Array(bound.metamodels.keys) == ["root", "nested"])
+        #expect(bound.metamodels["nested"]?.nsURI == "http://b")
+        #expect(bound.unboundMetamodelURIs == ["http://c"])
+        #expect(bound.metamodelURIs == module.metamodelURIs)
     }
 }

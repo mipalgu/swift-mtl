@@ -147,8 +147,10 @@ extension MTLExecutionContext {
             let visibilities = depth == 0 ? everything : inherited
             found += module.declaredCallables(named: name, visibilities: visibilities, rank: rank(of: module))
             for (order, imported) in module.importedModules.enumerated() {
-                found += imported.declaredCallables(
-                    named: name, visibilities: exported, rank: Self.importRank + order)
+                for exporter in imported.inheritanceChain {
+                    found += exporter.declaredCallables(
+                        named: name, visibilities: exported, rank: Self.importRank + order)
+                }
             }
         }
 

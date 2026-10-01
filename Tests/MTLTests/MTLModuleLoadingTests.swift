@@ -249,6 +249,16 @@ struct MTLModuleLoadingTests {
         }
     }
 
+    @Test("An import also exposes the public elements of the imported module's parent")
+    @MainActor
+    func importOfDerivedModule() async throws {
+        let module = try await Self.load("importsderived.mtl")
+        #expect(try await MTLTestSupport.output(module: module) == "Hello Kim!")
+        await #expect(throws: (any Error).self) {
+            _ = try await MTLTestSupport.output(module: module, main: "readsLabel")
+        }
+    }
+
     @Test("Overriding templates record what they override")
     func overridesRecorded() async throws {
         let module = try await Self.load("derived.mtl")

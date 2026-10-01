@@ -232,6 +232,36 @@ public struct MTLModule: Sendable, Equatable, Hashable {
         rebuilt(location: location, imports: imports, extending: extendedModule)
     }
 
+    /// The metamodel URIs of the module header that no bound package satisfies.
+    ///
+    /// Before ``binding(to:)`` is called this lists every URI of the header.
+    public var unboundMetamodelURIs: [String] {
+        metamodelURIs.filter { uri in !metamodels.values.contains { $0.nsURI == uri } }
+    }
+
+    /// Returns a copy of the module with its metamodel URIs bound to registered packages.
+    ///
+    /// Each URI of the module header is matched against the `nsURI` of the
+    /// given packages and their subpackages. A matching package is added to
+    /// ``metamodels`` under the package name. URIs without a matching package
+    /// stay listed in ``unboundMetamodelURIs``.
+    ///
+    /// - Parameter packages: The registered packages, for example those of the loaded models.
+    /// - Returns: A module whose ``metamodels`` hold the packages that match the header.
+    public func binding(to packages: [EPackage]) -> MTLModule {
+        func flattened(_ package: EPackage) -> [EPackage] {
+            [package] + package.eSubpackages.flatMap(flattened)
+        }
+        let candidates = packages.flatMap(flattened)
+        var bound = metamodels
+        for uri in metamodelURIs {
+            if let package = candidates.first(where: { $0.nsURI == uri }) {
+                bound[package.name] = package
+            }
+        }
+        return rebuilt(location: location, imports: importedModules, extending: extendedModule, metamodels: bound)
+    }
+
     /// Returns a copy of the module that records where it was loaded from.
     ///
     /// - Parameter url: The file the module was loaded from.
@@ -241,10 +271,15 @@ public struct MTLModule: Sendable, Equatable, Hashable {
     }
 
     /// Copies the module with a different location and linked modules.
-    private func rebuilt(location: URL?, imports: [MTLModule], extending extendedModule: MTLModule?) -> MTLModule {
+    private func rebuilt(
+        location: URL?,
+        imports: [MTLModule],
+        extending extendedModule: MTLModule?,
+        metamodels: OrderedDictionary<String, EPackage>? = nil
+    ) -> MTLModule {
         MTLModule(
             name: name,
-            metamodels: metamodels,
+            metamodels: metamodels ?? self.metamodels,
             extends: extends,
             imports: self.imports,
             templates: templates,
