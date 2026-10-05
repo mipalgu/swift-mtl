@@ -108,6 +108,17 @@ public protocol MTLGenerationStrategy: Sendable {
     @MainActor
     func existingContent(url: String) async -> String?
 
+    /// Returns the raw bytes of a target that already exists.
+    ///
+    /// Charsets decode these bytes, so the strategy is the only place that touches storage.
+    /// The default implementation encodes ``existingContent(url:)`` as UTF-8.
+    ///
+    /// - Parameter url: The target file path or identifier
+    ///
+    /// - Returns: The existing bytes, or `nil` if the target does not exist
+    @MainActor
+    func existingData(url: String) async -> Data?
+
     /// Tells whether a file already exists at the given URL.
     ///
     /// Templates reach this through the `fileExists` service, and `create` mode
@@ -156,6 +167,11 @@ extension MTLGenerationStrategy {
     @MainActor
     public func existingContent(url: String) async -> String? {
         return nil
+    }
+
+    @MainActor
+    public func existingData(url: String) async -> Data? {
+        await existingContent(url: url).map { Data($0.utf8) }
     }
 
     @MainActor
@@ -391,6 +407,30 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
         let path = resolveFilePath(url)
         guard FileManager.default.fileExists(atPath: path) else { return nil }
         return MTLCharset.readDetecting(atPath: path)
+    }
+
+    @MainActor
+    public func existingData(url: String) async -> Data? {
+        Self.contents(atPath: resolveFilePath(url))
+    }
+
+    /// Reads the bytes of a file on disk.
+    ///
+    /// This is the one place at which the library reads files itself; everything else asks a
+    /// generation strategy for the existing content of a target.
+    ///
+    /// - Parameter path: The file path.
+    /// - Returns: The bytes, or `nil` if the file cannot be read.
+    public static func contents(atPath path: String) -> Data? {
+        FileManager.default.contents(atPath: path)
+    }
+
+    /// Tells whether a file exists on disk.
+    ///
+    /// - Parameter path: The file path.
+    /// - Returns: `true` if a file or directory exists at the path.
+    public static func exists(atPath path: String) -> Bool {
+        FileManager.default.fileExists(atPath: path)
     }
 
     @MainActor

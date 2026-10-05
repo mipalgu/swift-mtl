@@ -144,7 +144,7 @@ public actor MTLProtectedAreaManager {
         }
 
         // Check if file exists
-        guard FileManager.default.fileExists(atPath: path) else {
+        guard MTLFileSystemStrategy.exists(atPath: path) else {
             if debug {
                 print("[Protected Areas] File does not exist, skipping: \(path)")
             }
@@ -152,7 +152,9 @@ public actor MTLProtectedAreaManager {
         }
 
         // Read file content
-        guard let fileContent = try? String(contentsOfFile: path, encoding: .utf8) else {
+        guard let data = MTLFileSystemStrategy.contents(atPath: path),
+            let fileContent = String(data: data, encoding: .utf8)
+        else {
             throw MTLExecutionError.fileError(
                 "Failed to read file for protected area scanning: \(path)")
         }
@@ -163,6 +165,24 @@ public actor MTLProtectedAreaManager {
         if debug {
             print("[Protected Areas] Found \(areas.count) protected areas in \(path)")
         }
+    }
+
+    /// Scans an existing target of a generation strategy for protected areas.
+    ///
+    /// The content is read through the strategy, so targets that exist only in memory are
+    /// scanned just like files on disk. A target that does not exist is skipped.
+    ///
+    /// - Parameters:
+    ///   - url: The target file path or identifier, as the strategy knows it.
+    ///   - strategy: The strategy that holds the target.
+    public func scanFile(_ url: String, using strategy: any MTLGenerationStrategy) async throws {
+        guard let content = await strategy.existingContent(url: url) else {
+            if debug {
+                print("[Protected Areas] Target does not exist, skipping: \(url)")
+            }
+            return
+        }
+        scanContent(content)
     }
 
     /// Scans text content for protected areas and extracts them.

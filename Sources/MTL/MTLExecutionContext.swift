@@ -898,7 +898,7 @@ public final class MTLExecutionContext: Sendable {
     /// - Parameter path: The file path to scan
     /// - Throws: `MTLExecutionError.fileError` if scanning fails
     public func scanFileForProtectedAreas(_ path: String) async throws {
-        try await protectedAreaManager.scanFile(path)
+        try await protectedAreaManager.scanFile(path, using: generationStrategy)
     }
 
     /// Returns the protected area manager for advanced operations.

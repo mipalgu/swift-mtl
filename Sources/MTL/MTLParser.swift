@@ -818,6 +818,9 @@ public actor MTLParser {
     /// The directories searched for imported and extended modules after the importing file's directory.
     private let searchPaths: [URL]
 
+    /// The source that supplies imported and extended modules before the search paths are tried.
+    private let moduleSource: (any MTLModuleSource)?
+
     // MARK: - Initialization
 
     /// Creates a parser.
@@ -826,9 +829,15 @@ public actor MTLParser {
     ///   - enableDebugging: Whether the parser logs its progress.
     ///   - searchPaths: The directories searched for imported and extended modules,
     ///     after the directory of the importing file (default: none).
-    public init(enableDebugging: Bool = false, searchPaths: [URL] = []) {
+    ///   - moduleSource: A source that supplies imported and extended modules from memory
+    ///     (default: none). It is asked before the file system is searched.
+    public init(
+        enableDebugging: Bool = false, searchPaths: [URL] = [],
+        moduleSource: (any MTLModuleSource)? = nil
+    ) {
         self.enableDebugging = enableDebugging
         self.searchPaths = searchPaths
+        self.moduleSource = moduleSource
     }
 
     // MARK: - Parsing
@@ -846,6 +855,7 @@ public actor MTLParser {
     public func parse(_ url: URL) async throws -> MTLModule {
         let loader = MTLModuleLoader(
             resolver: MTLModuleResolver(searchPaths: searchPaths),
+            moduleSource: moduleSource,
             enableDebugging: enableDebugging
         )
         return try await loader.load(url)
@@ -881,6 +891,7 @@ public actor MTLParser {
     public func link(_ module: MTLModule, relativeTo location: URL? = nil) async throws -> MTLModule {
         let loader = MTLModuleLoader(
             resolver: MTLModuleResolver(searchPaths: searchPaths),
+            moduleSource: moduleSource,
             enableDebugging: enableDebugging
         )
         return try await loader.link(module, relativeTo: location)

@@ -110,7 +110,19 @@ public enum MTLCharset: Sendable, Equatable, Hashable {
     /// - Parameter path: The file path.
     /// - Returns: The text, or `nil` if the file cannot be read or decoded.
     public func read(atPath path: String) -> String? {
-        guard let data = FileManager.default.contents(atPath: path) else { return nil }
+        guard let data = MTLFileSystemStrategy.contents(atPath: path) else { return nil }
+        return decode(data)
+    }
+
+    /// Reads the existing content of a generation strategy's target in this charset.
+    ///
+    /// - Parameters:
+    ///   - url: The target file path or identifier.
+    ///   - strategy: The strategy that holds the target.
+    /// - Returns: The text, or `nil` if the target does not exist or cannot be decoded.
+    @MainActor
+    public func read(url: String, from strategy: any MTLGenerationStrategy) async -> String? {
+        guard let data = await strategy.existingData(url: url) else { return nil }
         return decode(data)
     }
 
@@ -121,7 +133,27 @@ public enum MTLCharset: Sendable, Equatable, Hashable {
     /// - Parameter path: The file path.
     /// - Returns: The text, or `nil` if the file cannot be read.
     public static func readDetecting(atPath path: String) -> String? {
-        guard let data = FileManager.default.contents(atPath: path) else { return nil }
+        MTLFileSystemStrategy.contents(atPath: path).flatMap(detectingDecode)
+    }
+
+    /// Reads the existing content of a generation strategy's target whose charset is not known.
+    ///
+    /// - Parameters:
+    ///   - url: The target file path or identifier.
+    ///   - strategy: The strategy that holds the target.
+    /// - Returns: The text, or `nil` if the target does not exist.
+    @MainActor
+    public static func readDetecting(url: String, from strategy: any MTLGenerationStrategy) async -> String? {
+        await strategy.existingData(url: url).flatMap(detectingDecode)
+    }
+
+    /// Decodes bytes whose charset is not known.
+    ///
+    /// A UTF-16 byte order mark selects UTF-16; otherwise UTF-8 is tried, then ISO-8859-1.
+    ///
+    /// - Parameter data: The bytes.
+    /// - Returns: The text, or `nil` if the bytes cannot be decoded.
+    public static func detectingDecode(_ data: Data) -> String? {
         if data.starts(with: [0xFE, 0xFF]) { return MTLCharset.utf16.decode(data) }
         if data.starts(with: [0xFF, 0xFE]) {
             return String(data: data.dropFirst(2), encoding: .utf16LittleEndian)

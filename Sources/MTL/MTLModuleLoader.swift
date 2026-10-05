@@ -118,18 +118,28 @@ public struct MTLModuleResolver: Sendable, Equatable {
 /// call, and cyclic dependencies are reported as errors.
 public struct MTLModuleLoader: Sendable {
 
-    /// The resolver that locates imported and extended modules.
+    /// The resolver that locates imported and extended modules in files.
     public let resolver: MTLModuleResolver
+
+    /// The source that supplies imported and extended modules before the resolver is tried.
+    public let moduleSource: (any MTLModuleSource)?
 
     private let enableDebugging: Bool
 
     /// Creates a loader.
     ///
     /// - Parameters:
-    ///   - resolver: The resolver for imported and extended modules.
+    ///   - resolver: The resolver for imported and extended modules in files.
+    ///   - moduleSource: A source that supplies modules from memory (default: none). It is
+    ///     asked first; modules it does not know are looked up with the resolver.
     ///   - enableDebugging: Whether the parser logs its progress.
-    public init(resolver: MTLModuleResolver = MTLModuleResolver(), enableDebugging: Bool = false) {
+    public init(
+        resolver: MTLModuleResolver = MTLModuleResolver(),
+        moduleSource: (any MTLModuleSource)? = nil,
+        enableDebugging: Bool = false
+    ) {
         self.resolver = resolver
+        self.moduleSource = moduleSource
         self.enableDebugging = enableDebugging
     }
 
@@ -154,7 +164,9 @@ public struct MTLModuleLoader: Sendable {
     public func link(_ module: MTLModule, relativeTo location: URL? = nil) async throws -> MTLModule {
         var cache: [String: MTLModule] = [:]
         let stack = location.map { [Self.key(for: $0)] } ?? []
-        return try await link(module.located(at: location ?? module.location), stack: stack, cache: &cache)
+        return try await link(
+            module.located(at: location ?? module.location), locationName: location?.path,
+            stack: stack, cache: &cache)
     }
 
     // MARK: - Recursive Loading
@@ -174,29 +186,75 @@ public struct MTLModuleLoader: Sendable {
         }
 
         let parsed = try await MTLParser(enableDebugging: enableDebugging).parseWithoutLinking(url)
-        let linked = try await link(parsed, stack: stack + [key], cache: &cache)
+        let linked = try await link(parsed, locationName: url.path, stack: stack + [key], cache: &cache)
         cache[key] = linked
         return linked
     }
 
+    /// Loads a module that the module source supplied.
+    private func load(
+        text: String,
+        location: String,
+        stack: [String],
+        cache: inout [String: MTLModule]
+    ) async throws -> MTLModule {
+        let key = Self.sourceKey(for: location)
+        if let cycleStart = stack.firstIndex(of: key) {
+            throw MTLModuleResolutionError.cycle(Array(stack[cycleStart...]) + [key])
+        }
+        if let cached = cache[key] {
+            return cached
+        }
+
+        let parsed = try await MTLParser(enableDebugging: enableDebugging).parse(text, filename: location)
+        let linked = try await link(parsed, locationName: location, stack: stack + [key], cache: &cache)
+        cache[key] = linked
+        return linked
+    }
+
+    /// Loads a module that another module imports or extends.
+    ///
+    /// The module source is asked first, then the resolver.
+    private func resolve(
+        _ name: String,
+        for module: MTLModule,
+        locationName: String?,
+        stack: [String],
+        cache: inout [String: MTLModule]
+    ) async throws -> MTLModule {
+        if let found = try await moduleSource?.source(forModule: name, importedFrom: locationName) {
+            return try await load(
+                text: found.text, location: found.location, stack: stack, cache: &cache)
+        }
+        let file = try resolver.locate(name, relativeTo: module.location, requiredBy: module.name)
+        return try await load(file, requiredBy: module.name, stack: stack, cache: &cache)
+    }
+
     private func link(
         _ module: MTLModule,
+        locationName: String?,
         stack: [String],
         cache: inout [String: MTLModule]
     ) async throws -> MTLModule {
         var imports: [MTLModule] = []
         for name in module.imports {
-            let file = try resolver.locate(name, relativeTo: module.location, requiredBy: module.name)
-            imports.append(try await load(file, requiredBy: module.name, stack: stack, cache: &cache))
+            imports.append(
+                try await resolve(
+                    name, for: module, locationName: locationName, stack: stack, cache: &cache))
         }
 
         var parent: MTLModule?
         if let name = module.extends {
-            let file = try resolver.locate(name, relativeTo: module.location, requiredBy: module.name)
-            parent = try await load(file, requiredBy: module.name, stack: stack, cache: &cache)
+            parent = try await resolve(
+                name, for: module, locationName: locationName, stack: stack, cache: &cache)
         }
 
         return module.linking(imports: imports, extending: parent)
+    }
+
+    /// The key that identifies a module that a module source supplied.
+    private static func sourceKey(for location: String) -> String {
+        "source:" + location
     }
 
     /// The key that identifies a module file independently of how it was reached.
