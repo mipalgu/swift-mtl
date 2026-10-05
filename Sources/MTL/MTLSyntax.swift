@@ -122,7 +122,8 @@ public enum MTLSyntax {
 
     /// The keywords that introduce module-level declarations.
     static let declarationKeywords: Set<String> = [
-        "module", "import", "extends", "query", MTLGenerationKeywords.merge
+        "module", "import", "extends", "query", MTLGenerationKeywords.merge,
+        MTLGenerationKeywords.layout
     ]
 }
 

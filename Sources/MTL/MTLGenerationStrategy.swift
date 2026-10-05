@@ -351,6 +351,7 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
             existing: existing,
             mergeConfiguration: await writer.mergeConfiguration,
             regions: await writer.emittedRegions,
+            layout: await writer.layoutRequest,
             options: options,
             postProcessors: postProcessors
         )
@@ -596,6 +597,7 @@ public actor MTLInMemoryStrategy: MTLGenerationStrategy {
             existing: mode == .overwrite ? await getFile(targetPath) : nil,
             mergeConfiguration: await writer.mergeConfiguration,
             regions: await writer.emittedRegions,
+            layout: await writer.layoutRequest,
             options: options,
             postProcessors: postProcessors
         )

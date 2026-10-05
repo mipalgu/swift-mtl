@@ -97,6 +97,11 @@ public actor MTLWriter {
     /// of an existing file.
     public private(set) var emittedRegions: [MTLEmittedRegion] = []
 
+    /// How the layout conversion applies to this writer's file.
+    ///
+    /// Set when the file is closed.
+    var layoutRequest = MTLLayoutRequest()
+
     // MARK: - Initialisation
 
     /// Creates a new writer with the specified initial indentation.
@@ -250,6 +255,13 @@ public actor MTLWriter {
     ) {
         self.mergeConfiguration = mergeConfiguration
         self.emittedRegions = emittedRegions
+    }
+
+    /// Records how the layout conversion applies when the file is stored.
+    ///
+    /// - Parameter request: The layout declaration, per-file switch and verbatim lines.
+    func setLayoutRequest(_ request: MTLLayoutRequest) {
+        layoutRequest = request
     }
 
     /// Clears the buffer and resets the writer state.

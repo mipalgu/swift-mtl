@@ -23,6 +23,9 @@ public enum MTLGenerationKeywords {
     /// Declares the tagged-block merge configuration of a module.
     public static let merge = "merge"
 
+    /// Declares the layout conversion of a module.
+    public static let layout = "layout"
+
     /// Separator clause of an emit block: `separator('...')`.
     public static let separator = "separator"
 
@@ -57,6 +60,60 @@ public enum MTLDeferredBlockNames {
 
     /// The character that closes an emit placeholder in a file buffer.
     static let placeholderClose: Character = "\u{E001}"
+}
+
+// MARK: - Verbatim Markers
+
+/// The characters that delimit text that layout conversion must leave alone.
+///
+/// A protected area that is preserved from an existing file is written
+/// between these markers while a file is generated, so that the layout
+/// conversion does not convert text that is already in the target layout. The
+/// generator removes the markers before the file is merged or written.
+enum MTLVerbatimMarkers {
+
+    /// The character that opens a verbatim span.
+    static let open: Character = "\u{E002}"
+
+    /// The character that closes a verbatim span.
+    static let close: Character = "\u{E003}"
+
+    /// Wraps text in verbatim markers.
+    ///
+    /// - Parameter text: The text to protect.
+    /// - Returns: The text between the markers, or the empty string for empty text.
+    static func wrap(_ text: String) -> String {
+        text.isEmpty ? text : "\(open)\(text)\(close)"
+    }
+
+    /// Removes the markers from a text and reports the lines they enclosed.
+    ///
+    /// - Parameter text: A text that may contain verbatim spans.
+    /// - Returns: The text without markers and the zero-based ranges of the lines
+    ///   (counting `\n`) that the spans covered.
+    static func strip(_ text: String) -> (text: String, lines: [Range<Int>]) {
+        guard text.contains(open) || text.contains(close) else { return (text, []) }
+        var output = String.UnicodeScalarView()
+        var lines: [Range<Int>] = []
+        var lineCount = 0
+        var firstLine: Int?
+        var atLineStart = true
+        for scalar in text.unicodeScalars {
+            if scalar == open.unicodeScalars.first {
+                firstLine = lineCount
+            } else if scalar == close.unicodeScalars.first {
+                if let first = firstLine {
+                    lines.append(first..<(lineCount + (atLineStart ? 0 : 1)))
+                }
+                firstLine = nil
+            } else {
+                output.append(scalar)
+                if scalar == "\n" { lineCount += 1 }
+                atLineStart = scalar == "\n"
+            }
+        }
+        return (String(output), lines)
+    }
 }
 
 // MARK: - Merge Option Keys
@@ -113,6 +170,9 @@ public enum MTLFileOptionKeys {
     /// The key that enables or disables regeneration merging for the file.
     public static let merge = "merge"
 
+    /// The key that enables or disables layout conversion for the file.
+    public static let layout = "layout"
+
     /// The value that enables an option.
     public static let enabled = "true"
 
@@ -123,7 +183,7 @@ public enum MTLFileOptionKeys {
     public static let assignment: Character = "="
 
     /// All keys a `file` block understands.
-    public static let all: Set<String> = [merge]
+    public static let all: Set<String> = [merge, layout]
 }
 
 // MARK: - File Service Names

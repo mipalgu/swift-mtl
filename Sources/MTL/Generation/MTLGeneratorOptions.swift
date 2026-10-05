@@ -48,6 +48,16 @@ public struct MTLGeneratorOptions: Sendable, Equatable {
     /// equals the existing content.
     public var redirectionPattern: String?
 
+    /// The layout conversion applied to generated files.
+    ///
+    /// When set, it overrides the module's `[layout]` declaration: the module
+    /// declaration is ignored, and the file patterns of this configuration decide
+    /// which files are converted. A `[file]` block can still opt out with
+    /// `'layout=false'`. The conversion runs on freshly generated text before it
+    /// is merged with an existing file, because the existing file is already in
+    /// the target layout.
+    public var layout: MTLLayoutConfiguration?
+
     /// The line delimiter written to files (default: `"\n"`).
     ///
     /// Generated text uses `\n` internally; the delimiter is substituted
@@ -67,12 +77,15 @@ public struct MTLGeneratorOptions: Sendable, Equatable {
     ///   - redirectionPattern: A pattern for files written alongside existing files (default: `nil`).
     ///   - lineDelimiter: The line delimiter to write (default: `"\n"`).
     ///   - templateSearchPaths: Directories searched for template modules (default: empty).
+    ///   - layout: A layout conversion that overrides the module's declaration (default: `nil`).
     public init(
         forceOverwrite: Bool = false,
         redirectionPattern: String? = nil,
         lineDelimiter: String = "\n",
-        templateSearchPaths: [String] = []
+        templateSearchPaths: [String] = [],
+        layout: MTLLayoutConfiguration? = nil
     ) {
+        self.layout = layout
         self.forceOverwrite = forceOverwrite
         self.redirectionPattern = redirectionPattern
         self.lineDelimiter = lineDelimiter
@@ -126,6 +139,24 @@ public protocol MTLFilePostProcessor: Sendable {
     func process(_ content: String, path: String) async throws -> String
 }
 
+// MARK: - Layout Request
+
+/// How the layout conversion applies to one generated file.
+struct MTLLayoutRequest: Sendable, Equatable {
+
+    /// The layout declared by the module, if any.
+    var declaration: MTLLayoutConfiguration?
+
+    /// Whether the file has not opted out with `'layout=false'`.
+    var enabled = true
+
+    /// The URL of the file as written in the `file` block, matched against file patterns.
+    var fileURL = ""
+
+    /// The lines of the generated text that hold preserved protected areas.
+    var verbatimLines: [Range<Int>] = []
+}
+
 // MARK: - Output Preparation
 
 /// The steps that turn a finished writer into the text and path to store.
@@ -149,6 +180,7 @@ enum MTLOutputPreparation {
     ///   - existing: The current content of the target file, if it exists and is being overwritten.
     ///   - mergeConfiguration: The module's merge configuration, if any.
     ///   - regions: The emitted regions of the generated content.
+    ///   - layout: How the layout conversion applies to the file.
     ///   - options: The generator options.
     ///   - postProcessors: The post-processors to apply, in order.
     /// - Returns: The path and content to write, or `nil` if nothing needs to be written.
@@ -159,10 +191,26 @@ enum MTLOutputPreparation {
         existing: String?,
         mergeConfiguration: MTLMergeConfiguration?,
         regions: [MTLEmittedRegion],
+        layout: MTLLayoutRequest = MTLLayoutRequest(),
         options: MTLGeneratorOptions,
         postProcessors: [any MTLFilePostProcessor]
     ) async throws -> Outcome? {
         var target = path
+        var content = content
+        var regions = regions
+        if layout.enabled, let configuration = options.layout ?? layout.declaration,
+            !configuration.isIdentity,
+            configuration.applies(toFile: layout.fileURL.isEmpty ? path : layout.fileURL)
+        {
+            let converted = MTLLayoutConverter(configuration: configuration)
+                .convert(content, verbatimLines: layout.verbatimLines)
+            content = converted.text
+            regions = regions.map { region in
+                let first = converted.newLine(forOld: region.firstLine)
+                let end = converted.newLine(forOld: region.firstLine + region.lineCount)
+                return MTLEmittedRegion(name: region.name, firstLine: first, lineCount: max(0, end - first))
+            }
+        }
         var result = content
         if let existing, !options.forceOverwrite {
             if let redirected = options.redirectedPath(for: path) {

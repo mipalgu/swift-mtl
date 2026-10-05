@@ -24,11 +24,21 @@ public struct MTLFileOptions: Sendable, Equatable, Hashable {
     /// patterns match the file. Set to `false` with `'merge=false'`.
     public var merge: Bool
 
+    /// Whether the layout conversion applies to the file.
+    ///
+    /// Conversion still requires a module-level `[layout]` declaration or a
+    /// generator layout option whose file patterns match the file. Set to
+    /// `false` with `'layout=false'`.
+    public var layout: Bool
+
     /// Creates file options.
     ///
-    /// - Parameter merge: Whether regeneration merging applies to the file (default: `true`).
-    public init(merge: Bool = true) {
+    /// - Parameters:
+    ///   - merge: Whether regeneration merging applies to the file (default: `true`).
+    ///   - layout: Whether layout conversion applies to the file (default: `true`).
+    public init(merge: Bool = true, layout: Bool = true) {
         self.merge = merge
+        self.layout = layout
     }
 }
 
