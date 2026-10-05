@@ -28,6 +28,15 @@ public struct TaggedBlock: Sendable, Equatable {
     /// The text of the comments that immediately precede the block.
     public let leadingComment: String
 
+    /// The part of the leading comments that carries the tags.
+    ///
+    /// Only comments written in the form declared by the merge configuration
+    /// are included, joined by newlines. For line comment carriers only the
+    /// unbroken run of comment lines directly above the block counts. The
+    /// text is empty if the block has no such comment, in which case it
+    /// belongs to the user.
+    public let declaredComment: String
+
     /// The characters occupied by the block, from the start of the line of
     /// its leading comment to the end of its last character.
     public let range: Range<Int>
@@ -122,10 +131,10 @@ public struct TaggedBlockScanner: Sendable {
         let blocks: [TaggedBlock]
         switch configuration.strategy {
         case .braces:
-            blocks = try BraceScanner(characters: characters, syntax: configuration.syntax)
+            blocks = try BraceScanner(characters: characters, configuration: configuration)
                 .members(in: range)
         case .indentation:
-            blocks = IndentationScanner(characters: characters, syntax: configuration.syntax)
+            blocks = IndentationScanner(characters: characters, configuration: configuration)
                 .members(in: range)
         }
         return TaggedBlockScan(characters: characters, blocks: blocks)
@@ -209,6 +218,13 @@ private struct LexicalReader {
         return true
     }
 
+    /// Whether a blank line lies between two offsets that are separated only by whitespace.
+    func hasBlankLine(between start: Int, and end: Int) -> Bool {
+        var newlines = 0
+        for index in start..<end where characters[index] == "\n" { newlines += 1 }
+        return newlines > 1
+    }
+
     /// Collapses runs of whitespace into single spaces.
     func normalised(_ range: Range<Int>) -> String {
         var result = ""
@@ -234,27 +250,38 @@ private struct BraceScanner {
     var characters: [Character] { reader.characters }
     var syntax: MTLMergeSyntax { reader.syntax }
 
-    init(characters: [Character], syntax: MTLMergeSyntax) {
-        self.reader = LexicalReader(characters: characters, syntax: syntax)
+    let configuration: MTLMergeConfiguration
+
+    init(characters: [Character], configuration: MTLMergeConfiguration) {
+        self.configuration = configuration
+        self.reader = LexicalReader(characters: characters, syntax: configuration.syntax)
     }
 
     func members(in range: Range<Int>) throws -> [TaggedBlock] {
         var blocks: [TaggedBlock] = []
         var comments: [Range<Int>] = []
+        var runStart = 0
         var index = range.lowerBound
         let limit = range.upperBound
         while index < limit {
             if characters[index].isWhitespace { index += 1; continue }
             if let end = reader.commentEnd(at: index, limit: limit) {
+                if let previous = comments.last, reader.hasBlankLine(between: previous.upperBound, and: index) {
+                    runStart = comments.count
+                }
                 comments.append(index..<end)
                 index = end
                 continue
             }
             guard let member = try scanMember(from: index, limit: limit) else { break }
+            if let previous = comments.last, reader.hasBlankLine(between: previous.upperBound, and: index) {
+                runStart = comments.count
+            }
             let leadStart = comments.first?.lowerBound ?? index
             let start = reader.startsLine(at: leadStart) ? reader.lineStart(of: leadStart) : leadStart
-            let leading = comments.map { String(characters[$0]).trimmingCharacters(in: .whitespaces) }
-                .joined(separator: "\n")
+            let commentTexts = comments.map { String(characters[$0]).trimmingCharacters(in: .whitespaces) }
+            let leading = commentTexts.joined(separator: "\n")
+            let declared = configuration.tagCarryingComment(from: commentTexts, directRunStart: runStart)
             let signatureEnd = member.signatureEnd
             let signature = reader.normalised(index..<signatureEnd)
             let children: [TaggedBlock]
@@ -267,12 +294,14 @@ private struct BraceScanner {
             blocks.append(TaggedBlock(
                 signature: signature,
                 leadingComment: leading,
+                declaredComment: declared,
                 range: start..<member.end,
                 headerRange: start..<headerEnd,
                 bodyRange: member.body,
                 children: children
             ))
             comments = []
+            runStart = 0
             index = member.next
         }
         return blocks
@@ -393,8 +422,11 @@ private struct IndentationScanner {
     var characters: [Character] { reader.characters }
     var syntax: MTLMergeSyntax { reader.syntax }
 
-    init(characters: [Character], syntax: MTLMergeSyntax) {
-        self.reader = LexicalReader(characters: characters, syntax: syntax)
+    let configuration: MTLMergeConfiguration
+
+    init(characters: [Character], configuration: MTLMergeConfiguration) {
+        self.configuration = configuration
+        self.reader = LexicalReader(characters: characters, syntax: configuration.syntax)
     }
 
     private struct Line {
@@ -431,10 +463,11 @@ private struct IndentationScanner {
         guard let base = all.first(where: { !$0.isBlank && !$0.isComment })?.indent else { return [] }
         var blocks: [TaggedBlock] = []
         var comments: [Line] = []
+        var runStart = 0
         var index = 0
         while index < all.count {
             let line = all[index]
-            if line.isBlank { index += 1; continue }
+            if line.isBlank { runStart = comments.count; index += 1; continue }
             if line.isComment { comments.append(line); index += 1; continue }
             if line.indent != base { index += 1; continue }
             var last = index
@@ -447,9 +480,10 @@ private struct IndentationScanner {
             }
             let headerLine = headerEnd(in: all, from: index, to: last)
             let startOffset = comments.first?.start ?? line.start
-            let leading = comments
+            let commentTexts = comments
                 .map { String(characters[$0.start..<$0.end]).trimmingCharacters(in: .whitespaces) }
-                .joined(separator: "\n")
+            let leading = commentTexts.joined(separator: "\n")
+            let declared = configuration.tagCarryingComment(from: commentTexts, directRunStart: runStart)
             let end = all[last].end
             var body: Range<Int>?
             var children: [TaggedBlock] = []
@@ -470,12 +504,14 @@ private struct IndentationScanner {
             blocks.append(TaggedBlock(
                 signature: reader.normalised(firstCode..<max(firstCode, signatureEnd)),
                 leadingComment: leading,
+                declaredComment: declared,
                 range: startOffset..<end,
                 headerRange: headerRange,
                 bodyRange: body,
                 children: children
             ))
             comments = []
+            runStart = 0
             index = next
         }
         return blocks
