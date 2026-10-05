@@ -15,8 +15,7 @@ enum MergeFixtures {
 
     /// Returns the text of a fixture in `Resources/merge`.
     static func text(_ name: String) throws -> String {
-        let url = Bundle.module.resourceURL!
-            .appendingPathComponent("Resources/merge/\(name).txt")
+        let url = MTLTestSupport.resource("merge/\(name).txt")
         return try String(contentsOf: url, encoding: .utf8)
     }
 
