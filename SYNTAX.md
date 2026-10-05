@@ -61,6 +61,75 @@ A module may extend another module:
 A module name may be qualified when used in `extends` and `import`
 (`other::module`).
 
+### Layout conversion
+
+A module can ask for generated files to be converted to a code style, without
+the engine knowing anything about the target language:
+
+```mtl
+[layout ('indent=\t', 'targetIndent=  ', 'opener=sameLine', 'files=*.java')/]
+```
+
+Every argument is a string of the form `key=value`. Unknown keys and a second
+`[layout]` declaration are syntax errors. The keys are:
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `indent` | the indentation unit the templates write | a tab |
+| `targetIndent` | the indentation unit to produce | a tab |
+| `opener` | `ownLine` (leave as generated) or `sameLine` | `ownLine` |
+| `openerToken` | the opener, a single character | `{` |
+| `lineComments` | space-separated line comment markers | `//` |
+| `blockComment` | block comment start and end, separated by a space | `/* */` |
+| `quotes` | the characters that delimit string and character literals | `"` and `'` |
+| `terminators` | characters that end a statement | `;` |
+| `files` | space-separated glob patterns (as for `[merge]`) | all files |
+
+Values keep their white space, so `'indent=  '` is two spaces; the escapes `\t`
+and `\n` work as in any string literal.
+
+*Indentation.* Each occurrence of `indent` at the very start of a line becomes
+`targetIndent`. Only the unbroken run of units at the start of a line is
+converted: text inside a line, and anything after the first character that is
+not a unit, is untouched, so continuation alignment survives. Lines that
+contain only units are converted too. Lines inside comments are converted;
+lines that begin inside a multi-line string literal are not. Applying the
+conversion twice is harmless unless `targetIndent` starts with `indent` (for
+example two spaces to four), so the generator applies it exactly once.
+
+*Opener placement.* With `opener=sameLine`, an opener that stands alone on its
+line moves to the end of the preceding line, separated by one space. The rules:
+
+1. The opener is code: openers in comments and string literals never move.
+2. Only spaces and tabs surround it on its line (a `\n` or `\r\n` must follow;
+   an opener at the very end of the text does not move).
+3. An earlier non-blank line exists; the blank lines between it and the opener
+   are removed, along with trailing blanks of that line and the blanks around
+   the opener. Everything else keeps its place, including the indentation of
+   the earlier line and the line break that follows the opener.
+4. The last character of the earlier line is not a terminator, so a block that
+   follows a complete statement keeps its own line.
+5. That character is not itself an opener, so two openers never share a line.
+6. That character is code, or the end of a closed block comment or string
+   literal. A line that ends in a line comment, or inside a block comment, is
+   never joined.
+
+The rules do not know any keyword: `else`, `catch`, `finally`, annotations,
+anonymous classes and array initialisers all follow from the rules above. A
+closer on the earlier line is joined as well (`}` then `{` becomes `} {`).
+
+*Order and merging.* The generator converts the freshly generated text before
+it is merged with an existing file, because the existing file is already in the
+target layout. Kept blocks therefore compare and survive unchanged, and the
+`[emit]` regions are re-aligned when lines disappear. Text preserved from an
+existing file by `[protected]` is never converted.
+
+*Scope and precedence.* `files` limits the declaration to matching files. A
+`[file]` block opts out with `'layout=false'`:
+`[file ('plugin.xml', 'overwrite', 'UTF-8', 'layout=false')]`. The generator
+option `MTLGeneratorOptions.layout` replaces the module's declaration (its own
+`files` patterns then apply), but a `layout=false` file stays unconverted.
+
 ## Comments
 
 Four forms exist.
@@ -342,7 +411,8 @@ Options may follow the charset, each as a string literal `'key=value'`:
 ```
 
 `merge=false` stops the module's `[merge]` declaration from applying to this
-file (`merge=true` is the default). Unknown keys are syntax errors.
+file (`merge=true` is the default). `layout=false` stops layout conversion for
+the file (`layout=true` is the default). Unknown keys are syntax errors.
 
 In `create` mode an existing file is left untouched: no error is raised, the
 body is not evaluated (so it produces no output and its `[collect]` and nested
@@ -542,8 +612,9 @@ This is a summary, not a formal grammar.
 
 ```text
 module      ::= '[' 'module' name '(' uri {',' uri} ')' ['extends' qname] ['/'] ']'
-                { import | extends | comment | template | query | macro }
+                { import | extends | comment | layout | template | query | macro }
 import      ::= '[' 'import' qname ['/'] ']'
+layout      ::= '[' 'layout' '(' string {',' string} ')' ['/'] ']'   (each string is key=value)
 extends     ::= '[' 'extends' qname ['/'] ']'
 template    ::= '[' 'template' [visibility] name '(' [params] ')'
                 { '?' '(' expr ')' | 'guard' '(' expr ')'

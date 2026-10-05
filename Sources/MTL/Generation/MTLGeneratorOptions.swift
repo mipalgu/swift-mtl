@@ -25,6 +25,12 @@ import Foundation
 ///   merged into the existing file;
 /// - otherwise the generated text replaces the file.
 ///
+/// ## Layout
+///
+/// With ``layout`` set, generated text is converted to the configured code
+/// style before it is compared, merged or redirected, so that it is compared with
+/// the existing file in the layout that file already has.
+///
 /// ## Example
 ///
 /// ```swift

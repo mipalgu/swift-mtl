@@ -93,6 +93,13 @@ swift-aql release. See <doc:UnderstandingMTL> for details.
 - ``MTLExpression``
 - ``MTLInvocationExpression``
 
+### Layout Conversion
+
+- ``MTLLayoutConfiguration``
+- ``MTLOpenerPlacement``
+- ``MTLLayoutPostProcessor``
+- ``MTLLayoutOptionKeys``
+
 ### Protected Areas
 
 - ``MTLProtectedAreaManager``

@@ -217,6 +217,23 @@ follow the charset (``MTLFileOptions``): `'merge=false'` excludes the file from 
 module's `[merge]` declaration. The built-in `fileExists(path)` and `forceOverwrite()`
 services let a template inspect the file context. A file block on its own lines contributes only its content.
 
+## Layout conversion
+
+`[layout ('indent=\t', 'targetIndent=  ', 'opener=sameLine', 'files=*.java')/]` converts the
+layout of generated files to a code style without any knowledge of the target language
+(``MTLLayoutConfiguration``). Each leading indentation unit is replaced, and with
+`opener=sameLine` an opener that stands alone on its line moves to the end of the preceding
+line unless that line ends in a statement terminator or a comment, or is itself an opener.
+Comments and string literals are never altered by opener placement, and the comment markers,
+quotes, terminators and opener token are data of the declaration.
+
+Layout conversion runs on the freshly generated text before it is merged with an existing
+file, so that the merge compares like with like, and protected areas preserved from an
+existing file are left as they are. The generator option ``MTLGeneratorOptions/layout``
+overrides the module declaration, `'layout=false'` on a `file` block opts that file out
+(``MTLFileOptions``), and ``MTLLayoutPostProcessor`` applies a configuration as a
+post-processor.
+
 ## Protected areas
 
 `[protected (id)]default[/protected]` writes a pair of marker lines around the body:
