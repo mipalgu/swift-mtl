@@ -196,6 +196,22 @@ that are no longer produced are removed. Blocks are matched by normalised
 signature within the matching parent. Lines of an `[emit]` region present in
 the old file but missing from the new one are kept.
 
+Only the leading comment of a block, written in the declared comment form,
+carries the tags. That form starts with the comment start and, if the
+declaration gives a comment end, ends with it. Tags in other comments, such
+as line comments inside a body, comments of another form, comments further
+above that are not part of the block's leading comment, and string literals,
+are ignored. A generated method whose body mentions the keep tag (as the stub
+text of an unimplemented operation does) is therefore replaced as a whole.
+When the comment end is empty, only the unbroken run of line comments
+directly above the block counts; a blank line ends the run.
+
+A block that is generated and contains tagged members is merged member by
+member: its header and closing line come from the new text, and kept members
+retain their text verbatim. A kept container stays exactly as it is in the
+existing file. After a layout change, regenerated headers and closing lines
+therefore follow the new layout and a second run changes nothing.
+
 ### Layout Conversion
 
 A module can convert the layout of its generated files to a code style, using
