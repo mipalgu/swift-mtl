@@ -83,8 +83,10 @@ enum MTLTestSupport {
     /// - Returns: The file URL of the resource.
     static func resource(_ path: String) -> URL {
         let base = Bundle.module.resourceURL!
-        let nested = base.appendingPathComponent("Resources").appendingPathComponent(path)
-        if FileManager.default.fileExists(atPath: nested.path) { return nested }
-        return base.appendingPathComponent(path)
+        let nested = base.appendingPathComponent("Resources")
+        var isDirectory: ObjCBool = false
+        let root = FileManager.default.fileExists(atPath: nested.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue ? nested : base
+        return root.appendingPathComponent(path)
     }
 }
