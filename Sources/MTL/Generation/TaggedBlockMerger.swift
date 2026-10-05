@@ -47,6 +47,9 @@ public struct MTLEmittedRegion: Sendable, Equatable, Hashable {
 ///
 /// ## Rules
 ///
+/// - Only the leading comment of a block, written in the declared comment
+///   form, carries tags (see ``MTLMergeConfiguration/isDeclaredForm(_:)``).
+///   Tags elsewhere are ignored.
 /// - A matched block whose leading comment carries the keep tag, or carries
 ///   no generated tag, is preserved from the existing file.
 /// - A matched block that carries the generated tag is replaced by the new
@@ -56,8 +59,9 @@ public struct MTLEmittedRegion: Sendable, Equatable, Hashable {
 /// - An existing block that carries the generated tag but is no longer
 ///   generated is removed. Blocks that carry the keep tag or no tag stay.
 /// - A block with a body is merged recursively when its body contains tagged
-///   blocks; its header follows the same ownership rules and its closer is
-///   kept. Other blocks are replaced or preserved as a whole.
+///   blocks; its header follows the same ownership rules. The closing line
+///   comes from the new text for a generated block and from the existing
+///   file for a kept block. Other blocks are replaced or preserved as a whole.
 /// - Lines of emitted regions in the existing file that are absent from the
 ///   new region are kept, so collected sets are unioned.
 ///
