@@ -237,6 +237,44 @@ public struct MTLMergeConfiguration: Sendable, Equatable, Hashable {
         return .user
     }
 
+    /// Tells whether a comment is written in the declared comment form.
+    ///
+    /// The declared form is the one named by the `[merge]` declaration: a
+    /// comment that starts with ``commentStart`` and, when ``commentEnd`` is
+    /// not empty, ends with it. Only comments of this form carry the generated
+    /// and keep tags.
+    ///
+    /// - Parameter comment: The text of a single comment, without surrounding blanks.
+    /// - Returns: `true` if the comment is written in the declared form.
+    public func isDeclaredForm(_ comment: String) -> Bool {
+        guard comment.hasPrefix(commentStart) else { return false }
+        return commentEnd.isEmpty || (comment.hasSuffix(commentEnd) && comment.count >= commentStart.count + commentEnd.count)
+    }
+
+    /// Whether the tags are carried by comments that run to the end of the line.
+    ///
+    /// This is the case when ``commentEnd`` is empty. Such comments only count
+    /// as the leading comment of a block while they form an unbroken run of
+    /// lines directly above the block.
+    public var usesLineComments: Bool { commentEnd.isEmpty }
+
+    /// Selects the text that carries the tags from the comments preceding a block.
+    ///
+    /// Comments that are not written in the declared form are dropped. For
+    /// line comment carriers only the comments of the unbroken run directly
+    /// above the block are considered.
+    ///
+    /// - Parameters:
+    ///   - comments: All comments preceding the block, in source order, as single comments.
+    ///   - directRunStart: The index in `comments` of the first comment of the
+    ///     unbroken run of lines directly above the block, or `comments.count`
+    ///     if a blank line separates the comments from the block.
+    /// - Returns: The declared-form comments joined by newlines.
+    public func tagCarryingComment(from comments: [String], directRunStart: Int) -> String {
+        let candidates = usesLineComments ? Array(comments[min(directRunStart, comments.count)...]) : comments
+        return candidates.filter(isDeclaredForm).joined(separator: "\n")
+    }
+
     /// Tells whether this configuration applies to the file with the given URL.
     ///
     /// Without file patterns every file matches. Otherwise the URL must match at

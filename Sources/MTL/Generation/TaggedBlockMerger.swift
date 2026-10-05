@@ -102,10 +102,10 @@ public struct TaggedBlockMerger: Sendable {
         let oldScan = try scanner.scan(old)
         let newScan = try scanner.scan(new)
         let root = TaggedBlock(
-            signature: "", leadingComment: "", range: 0..<oldScan.characters.count,
+            signature: "", leadingComment: "", declaredComment: "", range: 0..<oldScan.characters.count,
             headerRange: 0..<0, bodyRange: 0..<oldScan.characters.count, children: oldScan.blocks)
         let newRoot = TaggedBlock(
-            signature: "", leadingComment: "", range: 0..<newScan.characters.count,
+            signature: "", leadingComment: "", declaredComment: "", range: 0..<newScan.characters.count,
             headerRange: 0..<0, bodyRange: 0..<newScan.characters.count, children: newScan.blocks)
         var merged = mergeBody(existing: root, old: oldScan, generated: newRoot, new: newScan)
         merged = unionRegions(in: merged, generated: new, regions: regions)
@@ -121,7 +121,8 @@ public struct TaggedBlockMerger: Sendable {
 
     private func mergeBody(
         existing: TaggedBlock, old: TaggedBlockScan,
-        generated: TaggedBlock, new: TaggedBlockScan
+        generated: TaggedBlock, new: TaggedBlockScan,
+        closingFromGenerated: Bool = false
     ) -> String {
         guard let oldBody = existing.bodyRange, let newBody = generated.bodyRange else {
             return old.text(existing.range)
@@ -149,7 +150,7 @@ public struct TaggedBlockMerger: Sendable {
                 items.append((index, nil, Item(gap: gap, text: old.text(block.range))))
             }
         }
-        let tail = old.text(cursor..<oldBody.upperBound)
+        let tail = closingFromGenerated ? "" : old.text(cursor..<oldBody.upperBound)
 
         // New tagged blocks without a counterpart are inserted after their predecessor.
         var anchor: Int?
@@ -166,14 +167,15 @@ public struct TaggedBlockMerger: Sendable {
             }
         }
 
-        return items.map { $0.item.gap + $0.item.text }.joined() + tail
+        let closing = closingFromGenerated ? new.text(newCursor..<newBody.upperBound) : tail
+        return items.map { $0.item.gap + $0.item.text }.joined() + closing
     }
 
     private func mergedBlock(
         existing: TaggedBlock, old: TaggedBlockScan,
         generated: TaggedBlock, new: TaggedBlockScan
     ) -> String {
-        let ownership = configuration.ownership(ofLeadingComment: existing.leadingComment)
+        let ownership = configuration.ownership(ofLeadingComment: existing.declaredComment)
         if ownership == .user { return old.text(existing.range) }
         let isContainer = existing.bodyRange != nil && generated.bodyRange != nil
             && (existing.children.contains(where: isTagged) || generated.children.contains(where: isTagged))
@@ -181,19 +183,24 @@ public struct TaggedBlockMerger: Sendable {
             let headerSource: (TaggedBlockScan, Range<Int>) = ownership == .kept
                 ? (old, existing.range.lowerBound..<oldBody.lowerBound)
                 : (new, generated.range.lowerBound..<newBody.lowerBound)
-            let body = mergeBody(existing: existing, old: old, generated: generated, new: new)
-            let footer = old.text(oldBody.upperBound..<existing.range.upperBound)
+            let generatedContainer = ownership == .generated
+            let body = mergeBody(
+                existing: existing, old: old, generated: generated, new: new,
+                closingFromGenerated: generatedContainer)
+            let footer = generatedContainer
+                ? new.text(newBody.upperBound..<generated.range.upperBound)
+                : old.text(oldBody.upperBound..<existing.range.upperBound)
             return headerSource.0.text(headerSource.1) + body + footer
         }
         return ownership == .kept ? old.text(existing.range) : new.text(generated.range)
     }
 
     private func isTagged(_ block: TaggedBlock) -> Bool {
-        configuration.ownership(ofLeadingComment: block.leadingComment) != .user
+        configuration.ownership(ofLeadingComment: block.declaredComment) != .user
     }
 
     private func isRemovable(_ block: TaggedBlock) -> Bool {
-        configuration.ownership(ofLeadingComment: block.leadingComment) == .generated
+        configuration.ownership(ofLeadingComment: block.declaredComment) == .generated
     }
 
     private func keys(of blocks: [TaggedBlock]) -> [String] {
