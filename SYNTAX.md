@@ -594,7 +594,11 @@ The rule is the one of MOFM2T:
 - Text is otherwise emitted literally. Block bodies are not re-indented.
 - A multi-line result of an expression (for example from a template call)
   inherits the leading white space of the line on which the expression starts.
-- Both LF and CRLF line endings are accepted.
+- Both LF and CRLF line endings are accepted. A template with CRLF line
+  endings behaves exactly like one with LF endings, and literal text keeps the
+  line endings it has in the template. Generated files therefore follow the
+  template text unless the generator's `lineDelimiter` option is set (see the
+  README), which rewrites every line ending on output.
 
 ```mtl
 [template main(n : Integer)]

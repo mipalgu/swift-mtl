@@ -235,6 +235,12 @@ unsupported charset, is an error and nothing is written.
 values that transform the content before it is written. Existing `[protected]`
 areas are preserved automatically when a file is regenerated.
 
+Line endings in generated output follow the template text: templates with CRLF
+line endings parse like LF ones and produce CRLF output. Setting
+`lineDelimiter` to a value other than `"\n"` rewrites every line ending in the
+written file to that delimiter. On Windows, keep template files byte-exact with
+a `.gitattributes` entry such as `*.mtl -text` if the output must use LF.
+
 
 ### AQL services
 

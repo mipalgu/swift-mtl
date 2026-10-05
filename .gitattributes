@@ -1,0 +1,4 @@
+* text=auto
+Tests/**/Resources/** -text
+Tests/**/Fixtures/** -text
+Examples/** -text
