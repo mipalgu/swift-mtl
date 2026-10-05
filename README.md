@@ -128,6 +128,21 @@ let module = try await parser.parse(URL(fileURLWithPath: "app/main.mtl"))
 
 `parse(_:)` with a file URL parses and links imports and parents; `parseWithoutLinking(_:)` skips linking, and `link(_:relativeTo:)` links a module parsed from source text. `MTLModuleLoader` loads each file once per call. A missing module throws `MTLModuleResolutionError.notFound`, and a cycle throws `.cycle`. Imports are not transitive, and only public elements are visible through an import; protected elements are visible to extending modules.
 
+To link without touching the file system, give the parser an `MTLModuleSource`, which returns the text and a location for a module name. The linker asks the source first and falls back to the search paths for modules it does not know:
+
+```swift
+let parser = MTLParser(moduleSource: openDocuments)
+let module = try await parser.link(try await parser.parse(text, filename: "main.mtl"))
+```
+
+### Editor Support
+
+`MTLParser.parseDiagnosing(_:filename:)` parses without stopping at the first mistake. It skips to the end of a broken directive (or to the matching closing tag of a broken block) and to the end of a broken template, query or macro, and returns the module that could be read, the diagnostics (`SourceDiagnostic` values with ranges and stable `MTLDiagnosticCode` codes) and an outline of the module. `MTLSyntax.tokens(in:)` splits template text, directives and expressions into highlighting tokens and never fails. Parsed statements, declarations and expressions carry an `origin` with their range in the source text; origins never take part in equality.
+
+### Progress and Cancellation
+
+`MTLGenerator.generate(mainTemplate:arguments:models:progress:)` reports an `MTLProgress` (templates executed, files written, current template and file) on the main actor. Generation checks for task cancellation at the start of every block and loop iteration and gives other main actor work the chance to run every ten milliseconds, so a cancelled run throws `CancellationError` and a run on the main actor keeps the interface responsive.
+
 ### Collected Sets and Deferred Blocks
 
 Values such as imports or includes are gathered while a file is generated and
