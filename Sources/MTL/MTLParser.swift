@@ -1307,12 +1307,12 @@ final class MTLSyntaxParser {
         var statements: [any MTLStatement] = []
 
         while true {
-            guard let token = current() else {
-                throw error("Unexpected end of file in template body")
-            }
-            if recovering, token.type == .eof {
+            if recovering, current() == nil || current()?.type == .eof {
                 recordFailure(error("Unexpected end of file in template body"))
                 break
+            }
+            guard let token = current() else {
+                throw error("Unexpected end of file in template body")
             }
 
             // Check for closing tag
