@@ -367,7 +367,9 @@ extension MTLExecutionContext {
 
         moduleStack.append(owner)
         pushScope()
+        templateStarted(template.name)
         defer {
+            templateFinished()
             popScope()
             moduleStack.removeLast()
         }

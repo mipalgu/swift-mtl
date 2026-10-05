@@ -173,6 +173,23 @@ public final class MTLExecutionContext: Sendable {
     /// model elements during generation.
     private var models: [String: Resource] = [:]
 
+    // MARK: Progress
+
+    /// The handler that is told how far generation has come.
+    var progressHandler: (@MainActor @Sendable (MTLProgress) -> Void)?
+
+    /// How far generation has come.
+    private(set) var progress = MTLProgress()
+
+    /// The files that are open, innermost last.
+    private var currentFiles: [String] = []
+
+    /// The templates that are running, innermost last.
+    private var runningTemplates: [String] = []
+
+    /// When work last gave way to other tasks.
+    private var lastYield = ContinuousClock.now
+
     // MARK: Debugging
 
     /// Whether debug mode is enabled.
@@ -223,6 +240,58 @@ public final class MTLExecutionContext: Sendable {
         self.aqlContext.register(MTLFileServices())
         for provider in serviceProviders {
             self.aqlContext.register(provider)
+        }
+    }
+
+    // MARK: - Progress and Cancellation
+
+    /// Starts a run: forgets earlier progress and installs the handler.
+    ///
+    /// - Parameter handler: The handler to tell about progress, if any.
+    func beginRun(reportingTo handler: (@MainActor @Sendable (MTLProgress) -> Void)?) {
+        progressHandler = handler
+        progress = MTLProgress()
+        currentFiles = []
+        runningTemplates = []
+        lastYield = ContinuousClock.now
+    }
+
+    /// Tells the handler about the current progress.
+    func reportProgress() {
+        progress.currentTemplate = runningTemplates.last
+        progress.currentFile = currentFiles.last
+        progressHandler?(progress)
+    }
+
+    /// Notes that a template has started.
+    ///
+    /// - Parameter name: The name of the template.
+    func templateStarted(_ name: String) {
+        runningTemplates.append(name)
+        reportProgress()
+    }
+
+    /// Notes that the innermost running template has finished.
+    func templateFinished() {
+        runningTemplates.removeLast()
+        progress.templatesExecuted += 1
+        reportProgress()
+    }
+
+    /// Stops the run if its task has been cancelled and lets other work proceed after a time budget.
+    ///
+    /// Generation calls this wherever it starts a block or a loop iteration. A task that
+    /// runs on the main actor therefore keeps the user interface responsive, because it gives
+    /// way every ``MTLYielding/budget`` of work.
+    ///
+    /// - Throws: `CancellationError` if the task has been cancelled.
+    func checkpoint() async throws {
+        try Task.checkCancellation()
+        let now = ContinuousClock.now
+        if now - lastYield >= MTLYielding.budget {
+            await Task.yield()
+            lastYield = ContinuousClock.now
+            try Task.checkCancellation()
         }
     }
 
@@ -517,6 +586,8 @@ public final class MTLExecutionContext: Sendable {
         switchCollectedVariables(from: deferredStates.last, to: state)
         appendWriter(newWriter)
         deferredStates.append(state)
+        currentFiles.append(url)
+        reportProgress()
     }
 
     /// Closes the current file, finalizing its content and popping its writer.
@@ -563,6 +634,9 @@ public final class MTLExecutionContext: Sendable {
         switchCollectedVariables(from: state, to: deferredStates.last)
 
         try await generationStrategy.finalizeWriter(fileWriter)
+        if !currentFiles.isEmpty { currentFiles.removeLast() }
+        progress.filesWritten += 1
+        reportProgress()
     }
 
     /// Tells whether a file exists as seen by the generation strategy.

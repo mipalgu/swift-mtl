@@ -243,7 +243,39 @@ public final class MTLGenerator {
         arguments: [(any EcoreValue)?],
         models: [String: Resource]
     ) async throws {
+        try await generate(
+            mainTemplate: mainTemplate, arguments: arguments, models: models, progress: nil)
+    }
+
+    /// Executes the specified main template and reports progress.
+    ///
+    /// This works like ``generate(mainTemplate:arguments:models:)``. In addition, the handler
+    /// is called on the main actor each time a template starts or finishes and each time a file
+    /// is opened or finished, and once more when the run ends.
+    ///
+    /// The run checks for cancellation at the start of every block and every loop iteration, and
+    /// gives other work on the main actor the chance to proceed after every ten milliseconds
+    /// of work, so a task that runs the generation keeps the user interface responsive and can
+    /// be cancelled promptly. A cancelled run throws `CancellationError` and is recorded as
+    /// unsuccessful in ``statistics``.
+    ///
+    /// - Parameters:
+    ///   - mainTemplate: The name of the main template to execute
+    ///   - arguments: The arguments to pass to the template
+    ///   - models: The input models keyed by alias (e.g., "IN", "LIB")
+    ///   - progress: The handler to tell about progress, or `nil` for none
+    ///
+    /// - Throws: `MTLExecutionError` if generation fails, or `CancellationError` if the task
+    ///   running the generation is cancelled
+    public func generate(
+        mainTemplate: String,
+        arguments: [(any EcoreValue)?],
+        models: [String: Resource],
+        progress: (@MainActor @Sendable (MTLProgress) -> Void)?
+    ) async throws {
         let startTime = Date()
+        executionContext.beginRun(reportingTo: progress)
+        defer { executionContext.progressHandler = nil }
         statistics.reset()
 
         do {
@@ -280,6 +312,7 @@ public final class MTLGenerator {
 
             // Finalize
             try await executionContext.finalize()
+            executionContext.reportProgress()
 
             // Record success
             statistics.successful = true

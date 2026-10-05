@@ -381,6 +381,8 @@ public struct MTLForStatement: MTLStatement {
 
         // Execute body for each item
         for (index, item) in items.enumerated() {
+            try await context.checkpoint()
+
             // Push scope and bind loop variable and the one-based counter
             context.pushScope()
             context.setVariable(MTLSyntax.iterationCounterVariable, value: index + 1)

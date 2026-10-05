@@ -100,8 +100,10 @@ public struct MTLBlock: Sendable, Equatable, Hashable {
             }
         }
 
+        try await context.checkpoint()
         for statement in statements {
             try await statement.execute(in: context)
+            try await context.checkpoint()
         }
     }
 
