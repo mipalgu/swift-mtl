@@ -136,7 +136,7 @@ struct MTLLayoutDeclarationTests {
     func fileOption() {
         #expect(MTLFileOptions().layout)
         #expect(MTLFileOptions(layout: false) != MTLFileOptions())
-        #expect(MTLFileOptionKeys.all.contains(MTLFileOptionKeys.layout))
+        #expect(MTLFileOptionKeys.known == [MTLFileOptionKeys.merge, MTLFileOptionKeys.layout])
     }
 
     @Test("The word layout stays usable as a variable name")

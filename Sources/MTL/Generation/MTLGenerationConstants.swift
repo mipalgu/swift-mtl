@@ -182,8 +182,11 @@ public enum MTLFileOptionKeys {
     /// The character that separates the key from the value.
     public static let assignment: Character = "="
 
+    /// The keys that control regeneration merging.
+    public static let all: Set<String> = [merge]
+
     /// All keys a `file` block understands.
-    public static let all: Set<String> = [merge, layout]
+    public static let known: Set<String> = [merge, layout]
 }
 
 // MARK: - File Service Names
