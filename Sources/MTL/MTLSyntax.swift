@@ -6,6 +6,7 @@
 //  Copyright (c) 2026 Rene Hexel. All rights reserved.
 //
 
+import AQL
 import Foundation
 
 // MARK: - MTL Syntax Constants
@@ -27,7 +28,7 @@ public enum MTLSyntax {
     /// Inside an iterator body without an explicit iterator variable, and
     /// inside a `post` expression, it is bound to the current element or to the
     /// generated text respectively.
-    public static let selfVariable = "self"
+    public static let selfVariable = AQLSyntax.selfVariable
 
     /// The implicit, one-based iteration counter available inside a `for` block.
     public static let iterationCounterVariable = "i"
@@ -52,7 +53,7 @@ public enum MTLSyntax {
     // MARK: - Names and Modules
 
     /// The separator between the segments of a qualified name.
-    public static let qualifiedNameSeparator = "::"
+    public static let qualifiedNameSeparator = AQLSyntax.packageSeparator
 
     /// The file extension of MTL module files (without the leading dot).
     public static let moduleFileExtension = "mtl"
@@ -68,15 +69,13 @@ public enum MTLSyntax {
     // MARK: - Types
 
     /// The declared type that accepts any value.
-    public static let anyType = "OclAny"
+    public static let anyType = AQLBuiltInType.any
 
     /// The declared type of a macro parameter that receives the body of the invocation.
     public static let macroBodyType = "Body"
 
     /// The names of the collection types that may carry an element type in parentheses.
-    public static let collectionTypeNames: Set<String> = [
-        "Sequence", "OrderedSet", "Set", "Bag", "Collection"
-    ]
+    public static let collectionTypeNames: Set<String> = AQLSyntax.collectionTypeNames
 
     /// The names of the primitive types and the Swift types that implement them.
     public static let primitiveTypeNames: [String: Set<String>] = [
@@ -89,23 +88,19 @@ public enum MTLSyntax {
     // MARK: - Standalone Functions
 
     /// The names of AQL library functions that take no receiver.
-    public static let standaloneFunctionNames: Set<String> = [
-        "min", "max", "abs", "toString"
-    ]
+    public static let standaloneFunctionNames: Set<String> = AQLSyntax.standaloneFunctionNames
 
     /// The OCL type operations whose first argument is a type name and whose receiver defaults to `self`.
-    public static let typeOperationNames: Set<String> = [
-        "oclIsKindOf", "oclIsTypeOf", "oclAsType", "oclIsUndefined"
-    ]
+    public static let typeOperationNames: Set<String> = AQLSyntax.typeOperationNames
 
     /// The operations whose arguments name types, so that qualified names in them denote types.
-    public static let typeArgumentOperationNames: Set<String> = typeOperationNames.union(["filter"])
+    public static let typeArgumentOperationNames: Set<String> = AQLSyntax.typeArgumentOperationNames
 
     /// The operations without a dedicated expression node whose argument is an iterator body.
     ///
     /// The iterator variable may be omitted in the argument, in which case the body is evaluated
     /// with the element bound to `self`.
-    public static let iteratorOperationNames: Set<String> = ["sortedBy", "closure", "one", "isUnique"]
+    public static let iteratorOperationNames: Set<String> = AQLSyntax.iteratorOperationNames
 
     // MARK: - Block Keywords
 

@@ -113,7 +113,8 @@ private actor MTLLexer {
 
     // MARK: - Keywords
 
-    static let keywords: Set<String> = [
+    /// The words of the AQL expression syntax together with those of the MTL template syntax.
+    static let keywords: Set<String> = AQLSyntax.keywords.union(AQLSyntax.booleanLiterals).union([
         // Module and imports
         "module", "import", "extends",
 
@@ -124,7 +125,7 @@ private actor MTLLexer {
         "public", "private", "protected",
 
         // Control flow
-        "if", "elseif", "else", "for", "let",
+        "elseif", "for",
 
         // File operations
         "file",
@@ -132,30 +133,15 @@ private actor MTLLexer {
         // Generation facilities (see MTLGenerationKeywords)
         MTLGenerationKeywords.emit, MTLGenerationKeywords.merge, MTLGenerationKeywords.layout,
 
-        // Protected areas
-        "protected",
-
         // Special
-        "main", "post", "guard", "overrides", "then", "endif", "mod", "div",
+        "main", "post", "guard", "overrides",
 
         // Separators
         "separator",
 
         // File modes
         "overwrite", "append", "create",
-
-        // Boolean
-        "true", "false",
-
-        // OCL/AQL operations (commonly used in MTL)
-        "in", "and", "or", "not", "xor", "implies",
-        "select", "reject", "collect", "forAll", "exists", "any",
-        "size", "isEmpty", "notEmpty", "first", "last",
-        "oclIsKindOf", "oclIsTypeOf", "oclAsType", "oclIsUndefined",
-
-        // Null literal
-        "null"
-    ]
+    ])
 
     // MARK: - Operators
 
@@ -721,6 +707,9 @@ private actor MTLSyntaxParser {
     // MARK: - Properties
 
     private let tokens: [MTLToken]
+
+    /// The tokens as the AQL grammar reads them, index for index parallel to ``tokens``.
+    private let aqlTokens: [AQLToken]
     private var position: Int = 0
     private let enableDebugging: Bool
 
@@ -732,13 +721,12 @@ private actor MTLSyntaxParser {
     /// Inside them, calls without a receiver apply to the implicit `self`.
     private var implicitReceiverDepth = 0
 
-    /// How many type operation argument lists enclose the expression being parsed.
-    private var typeArgumentDepth = 0
-
     // MARK: - Initialization
 
     init(tokens: [MTLToken], enableDebugging: Bool = false) {
-        self.tokens = tokens.filter { !$0.isWhitespace }  // Skip whitespace tokens
+        let significant = tokens.filter { !$0.isWhitespace }  // Skip whitespace tokens
+        self.tokens = significant
+        self.aqlTokens = significant.map(\.aqlToken)
         self.enableDebugging = enableDebugging
     }
 
@@ -1073,353 +1061,14 @@ private actor MTLSyntaxParser {
 
     // MARK: - Expression Parsing
 
-    /// Parses an expression with operator precedence.
+    /// Parses an expression with the AQL grammar.
+    ///
+    /// The expression ends before the first token that the AQL grammar cannot continue with.
+    /// A `/` followed by `]` ends the expression instead of dividing.
     private func parseExpression() throws -> MTLExpression {
-        return try parseImpliesExpression()
-    }
-
-    /// Parses logical OR expression (lowest precedence).
-    private func parseLogicalOrExpression() throws -> MTLExpression {
-        var left = try parseLogicalAndExpression()
-
-        while true {
-            let op: AQLBinaryExpression.Operator
-            switch current()?.type {
-            case .keyword("or"): op = .or
-            case .keyword("xor"): op = .xor
-            default: return left
-            }
-            advance()
-            let right = try parseLogicalAndExpression()
-            left = MTLExpression(
-                AQLBinaryExpression(left: left.aqlExpression, op: op, right: right.aqlExpression)
-            )
-        }
-    }
-
-    /// Parses logical AND expression.
-    private func parseLogicalAndExpression() throws -> MTLExpression {
-        var left = try parseComparisonExpression()
-
-        while case .keyword("and") = current()?.type {
-            advance()
-            let right = try parseComparisonExpression()
-            left = MTLExpression(
-                AQLBinaryExpression(left: left.aqlExpression, op: .and, right: right.aqlExpression)
-            )
-        }
-
-        return left
-    }
-
-    /// Parses comparison expression.
-    private func parseComparisonExpression() throws -> MTLExpression {
-        var left = try parseAdditiveExpression()
-
-        while let op = parseComparisonOperator() {
-            let right = try parseAdditiveExpression()
-            left = MTLExpression(
-                AQLBinaryExpression(left: left.aqlExpression, op: op, right: right.aqlExpression)
-            )
-        }
-
-        return left
-    }
-
-    /// Parses comparison operator if present.
-    private func parseComparisonOperator() -> AQLBinaryExpression.Operator? {
-        switch current()?.type {
-        case .operator("="):
-            advance()
-            return .equals
-        case .operator("<>"):
-            advance()
-            return .notEquals
-        case .operator("<"):
-            advance()
-            return .lessThan
-        case .operator(">"):
-            advance()
-            return .greaterThan
-        case .operator("<="):
-            advance()
-            return .lessOrEqual
-        case .operator(">="):
-            advance()
-            return .greaterOrEqual
-        default:
-            return nil
-        }
-    }
-
-    /// Parses additive expression (+ and -).
-    private func parseAdditiveExpression() throws -> MTLExpression {
-        var left = try parseMultiplicativeExpression()
-
-        while true {
-            switch current()?.type {
-            case .operator("+"):
-                advance()
-                let right = try parseMultiplicativeExpression()
-                left = MTLExpression(
-                    AQLBinaryExpression(left: left.aqlExpression, op: .add, right: right.aqlExpression)
-                )
-            case .operator("-"):
-                advance()
-                let right = try parseMultiplicativeExpression()
-                left = MTLExpression(
-                    AQLBinaryExpression(left: left.aqlExpression, op: .subtract, right: right.aqlExpression)
-                )
-            default:
-                return left
-            }
-        }
-    }
-
-    /// Parses multiplicative expression (*, /).
-    private func parseMultiplicativeExpression() throws -> MTLExpression {
-        var left = try parseUnaryExpression()
-
-        while true {
-            switch current()?.type {
-            case .operator("*"):
-                advance()
-                let right = try parseUnaryExpression()
-                left = MTLExpression(
-                    AQLBinaryExpression(left: left.aqlExpression, op: .multiply, right: right.aqlExpression)
-                )
-            case .slash where peek()?.type != .rightBracket:
-                // The lexer reports '/' as a slash token; a slash before ']' ends the directive instead
-                advance()
-                let right = try parseUnaryExpression()
-                left = MTLExpression(
-                    AQLBinaryExpression(left: left.aqlExpression, op: .divide, right: right.aqlExpression)
-                )
-            case .keyword("mod"):
-                advance()
-                let right = try parseUnaryExpression()
-                left = MTLExpression(
-                    AQLBinaryExpression(left: left.aqlExpression, op: .mod, right: right.aqlExpression)
-                )
-            case .keyword("div"):
-                advance()
-                let right = try parseUnaryExpression()
-                left = MTLExpression(
-                    AQLBinaryExpression(left: left.aqlExpression, op: .div, right: right.aqlExpression)
-                )
-            default:
-                return left
-            }
-        }
-    }
-
-    /// Parses unary expression (not, -).
-    private func parseUnaryExpression() throws -> MTLExpression {
-        switch current()?.type {
-        case .keyword("not"):
-            advance()
-            let operand = try parseUnaryExpression()  // Right-associative
-            return MTLExpression(
-                AQLUnaryExpression(op: .not, operand: operand.aqlExpression)
-            )
-        case .operator("-"):
-            // Check if this is unary minus or binary subtract
-            // Unary minus only appears before primary expressions
-            advance()
-            let operand = try parseUnaryExpression()  // Right-associative
-            return MTLExpression(
-                AQLUnaryExpression(op: .negate, operand: operand.aqlExpression)
-            )
-        default:
-            return try parseNavigationExpression()
-        }
-    }
-
-    /// Parses navigation expression (obj.prop, obj->operation()).
-    private func parseNavigationExpression() throws -> MTLExpression {
-        var expr = try parsePrimaryExpression()
-
-        while true {
-            switch current()?.type {
-            case .dot:
-                // Property navigation or method call: obj.prop or obj.method(args)
-                advance()
-
-                // Get property/method name (allow keywords as property names)
-                let propName: String
-                switch current()?.type {
-                case .identifier(let name):
-                    propName = name
-                case .keyword(let name):
-                    // Allow keywords as property/method names (e.g., oclIsKindOf)
-                    propName = name
-                default:
-                    throw error("Expected property name after '.'")
-                }
-                advance()
-
-                // Check for method call: obj.method(args)
-                if current()?.type == .leftParen {
-                    let args = try parseCallArguments(forOperation: propName)
-                    expr = makeInvocation(name: propName, receiver: expr.aqlExpression, arguments: args)
-                } else {
-                    expr = MTLExpression(
-                        AQLNavigationExpression(source: expr.aqlExpression, property: propName)
-                    )
-                }
-
-            case .operator("->"):
-                // Collection operation: obj->select(...)
-                advance()
-                expr = try parseCollectionOperation(source: expr)
-
-            default:
-                return expr
-            }
-        }
-    }
-
-    /// Parses collection operation like select, reject, collect, etc.
-    private func parseCollectionOperation(source: MTLExpression) throws -> MTLExpression {
-        // Parse operation name (allow keywords as operation names)
-        let opName: String
-        switch current()?.type {
-        case .identifier(let id):
-            opName = id
-        case .keyword(let kw):
-            opName = kw
-        default:
-            throw error("Expected collection operation name after '->'")
-        }
-        advance()
-
-        // Map operation name to AQLCollectionExpression.Operation
-        let operation: AQLCollectionExpression.Operation
-        switch opName {
-        case "select": operation = .select
-        case "reject": operation = .reject
-        case "collect": operation = .collect
-        case "any": operation = .any
-        case "exists": operation = .exists
-        case "forAll": operation = .forAll
-        case "size": operation = .size
-        case "isEmpty": operation = .isEmpty
-        case "notEmpty": operation = .notEmpty
-        case "first": operation = .first
-        case "last": operation = .last
-        case "indexOf": operation = .indexOf
-        default:
-            // Any other operation becomes a generic call on the collection
-            return try parseGenericCollectionOperation(named: opName, source: source)
-        }
-
-        // Operations that don't need parameters
-        if operation == .size || operation == .isEmpty || operation == .notEmpty ||
-           operation == .first || operation == .last {
-            // These operations may have () or not
-            if current()?.type == .leftParen {
-                advance()
-                try expect(.rightParen)
-            }
-            return MTLExpression(
-                AQLCollectionExpression(source: source.aqlExpression, operation: operation)
-            )
-        }
-
-        // Operations that take a single argument (not an iterator pattern)
-        if operation == .indexOf {
-            try expect(.leftParen)
-            let argExpr = try parseExpression()
-            try expect(.rightParen)
-            return MTLExpression(
-                AQLCollectionExpression(
-                    source: source.aqlExpression,
-                    operation: operation,
-                    body: argExpr.aqlExpression
-                )
-            )
-        }
-
-        // Operations that need iterator and body: select, reject, collect, any, forAll, exists
-        try expect(.leftParen)
-
-        // Parse iterator variable: x | body, x : Type | body, or an implicit iterator
-        let header = try parseLambdaHeader()
-        let iterator = header?.name ?? MTLSyntax.selfVariable
-        let usesImplicitIterator = header == nil
-        if usesImplicitIterator { implicitReceiverDepth += 1 }
-        defer { if usesImplicitIterator { implicitReceiverDepth -= 1 } }
-
-        // Parse body expression
-        let body = try parseExpression()
-
-        try expect(.rightParen)
-
-        return MTLExpression(
-            AQLCollectionExpression(
-                source: source.aqlExpression,
-                operation: operation,
-                iterator: iterator,
-                body: body.aqlExpression
-            )
-        )
-    }
-
-    /// Parses primary expression (literals, variables, calls, parentheses).
-    private func parsePrimaryExpression() throws -> MTLExpression {
-        switch current()?.type {
-        // String literal
-        case .stringLiteral(let value):
-            advance()
-            return MTLExpression(AQLLiteralExpression(value: value))
-
-        // Integer literal
-        case .integerLiteral(let value):
-            advance()
-            return MTLExpression(AQLLiteralExpression(value: value))
-
-        // Real literal
-        case .realLiteral(let value):
-            advance()
-            return MTLExpression(AQLLiteralExpression(value: value))
-
-        // Boolean literal
-        case .booleanLiteral(let value):
-            advance()
-            return MTLExpression(AQLLiteralExpression(value: value))
-
-        // Null literal
-        case .keyword("null"):
-            advance()
-            return MTLExpression(AQLLiteralExpression(value: nil))
-
-        // Conditional expression: if c then a else b endif
-        case .keyword("if"):
-            advance()
-            return try parseConditionalExpression()
-
-        // Let expression: let x = e in body
-        case .keyword("let"):
-            advance()
-            return try parseLetExpression()
-
-        // Variable, qualified name, call, or collection literal
-        case .identifier(let name):
-            return try parseNameExpression(name)
-
-        case .keyword(let keyword):
-            // Some keywords can be used as variable or operation names in expressions
-            return try parseNameExpression(keyword)
-
-        // Parenthesized expression
-        case .leftParen:
-            advance()
-            let expr = try parseExpression()
-            try expect(.rightParen)
-            return expr
-
-        default:
-            throw error("Expected expression, got \(current()?.type ?? .eof)")
+        try withAQLCursor { cursor in
+            var delegate = MTLParserDelegate()
+            return MTLExpression(try AQLParser.parseExpression(&cursor, delegate: &delegate))
         }
     }
 
@@ -2068,16 +1717,11 @@ extension MTLLexer {
              .rightParen, .rightBrace:
             return true
         case .keyword(let word):
-            return !Self.operatorKeywords.contains(word)
+            return !AQLSyntax.operandExpectingKeywords.contains(word)
         default:
             return false
         }
     }
-
-    /// Keywords after which an operand (rather than an operator) is expected.
-    private static let operatorKeywords: Set<String> = [
-        "and", "or", "not", "xor", "implies", "in", "mod", "div", "then", "else", "if", "let", "elseif"
-    ]
 }
 
 // MARK: - Syntax Parser: Module Structure
@@ -2178,41 +1822,19 @@ extension MTLSyntaxParser {
     /// - Parameter description: What the name denotes, for error messages.
     /// - Returns: The segments joined by `::`.
     fileprivate func parseQualifiedName(describing description: String) throws -> String {
-        var segments: [String] = [try parseNameSegment(describing: description)]
-        while case .doubleColon = current()?.type {
-            advance()
-            segments.append(try parseNameSegment(describing: description))
-        }
-        return segments.joined(separator: MTLSyntax.qualifiedNameSeparator)
+        try withAQLCursor { try AQLParser.parseQualifiedName(&$0, describing: description) }
     }
 
     /// Parses one identifier, accepting keywords as names.
     private func parseNameSegment(describing description: String) throws -> String {
-        switch current()?.type {
-        case .identifier(let id), .keyword(let id):
-            advance()
-            return id
-        default:
-            throw error("Expected \(description)")
-        }
+        try withAQLCursor { try AQLParser.parseNameSegment(&$0, describing: description) }
     }
 
     /// Parses a type name such as `String`, `ecore::EClass`, or `Sequence(EClass)`.
     ///
     /// - Returns: The type as written, with qualification and element types.
     fileprivate func parseTypeName() throws -> String {
-        var name = try parseQualifiedName(describing: "type name")
-        if case .leftParen = current()?.type {
-            advance()
-            var arguments: [String] = [try parseTypeName()]
-            while case .comma = current()?.type {
-                advance()
-                arguments.append(try parseTypeName())
-            }
-            try expect(.rightParen)
-            name += "(" + arguments.joined(separator: ", ") + ")"
-        }
-        return name
+        try withAQLCursor { try AQLParser.parseTypeName(&$0) }
     }
 
     /// Parses a parameter list: `(name : Type, other : Type)`.
@@ -2322,15 +1944,25 @@ extension MTLSyntaxParser {
 
 extension MTLSyntaxParser {
 
-    /// Parses `implies`, the loosest binding operator, which associates to the right.
-    fileprivate func parseImpliesExpression() throws -> MTLExpression {
-        let left = try parseLogicalOrExpression()
-        guard case .keyword("implies") = current()?.type else { return left }
-        advance()
-        let right = try parseImpliesExpression()
-        return MTLExpression(
-            AQLBinaryExpression(left: left.aqlExpression, op: .implies, right: right.aqlExpression)
-        )
+    /// Runs a read of the AQL grammar over the current tokens and moves past what it read.
+    ///
+    /// - Parameter body: The read, given a cursor at the current position.
+    /// - Returns: What the read returned.
+    /// - Throws: An MTL parse error for a syntax error of the AQL grammar.
+    fileprivate func withAQLCursor<Result>(
+        _ body: (inout AQLTokenCursor) throws -> Result
+    ) throws -> Result {
+        var cursor = AQLTokenCursor(
+            tokens: aqlTokens, position: position, implicitReceiverDepth: implicitReceiverDepth,
+            terminator: MTLParserDelegate.endsExpression)
+        do {
+            let result = try body(&cursor)
+            position = cursor.position
+            return result
+        } catch let syntaxError as AQLSyntaxError {
+            let diagnostic = syntaxError.diagnostic
+            throw parseError(diagnostic.message, line: diagnostic.line, column: diagnostic.column)
+        }
     }
 
     /// Whether the `if` at the current position starts a conditional expression.
@@ -2364,219 +1996,15 @@ extension MTLSyntaxParser {
         return false
     }
 
-    /// Parses the rest of `if condition then a else b endif`; `if` is already consumed.
-    fileprivate func parseConditionalExpression() throws -> MTLExpression {
-        let condition = try parseExpression()
-        try expectKeyword("then")
-        let thenExpression = try parseExpression()
-        try expectKeyword("else")
-        let elseExpression = try parseExpression()
-        try expectKeyword("endif")
-        return MTLExpression(
-            AQLConditionalExpression(
-                condition: condition.aqlExpression,
-                thenExpression: thenExpression.aqlExpression,
-                elseExpression: elseExpression.aqlExpression
-            )
-        )
-    }
-
-    /// Parses the rest of `let x : T = e, y = f in body`; `let` is already consumed.
-    fileprivate func parseLetExpression() throws -> MTLExpression {
-        var bindings: [(String, any AQLExpression)] = []
-        while true {
-            let name = try parseNameSegment(describing: "variable name")
-            if case .colon = current()?.type {
-                advance()
-                _ = try parseTypeName()
-            }
-            try expect(.operator("="))
-            bindings.append((name, try parseExpression().aqlExpression))
-            guard case .comma = current()?.type else { break }
-            advance()
-        }
-        try expectKeyword("in")
-        let body = try parseExpression()
-        return MTLExpression(AQLLetExpression(bindings: bindings, body: body.aqlExpression))
-    }
-
-    /// Parses a name, a qualified name, a call, or a collection literal.
-    ///
-    /// The current token must be the identifier or keyword `first`.
-    fileprivate func parseNameExpression(_ first: String) throws -> MTLExpression {
-        if MTLSyntax.collectionTypeNames.contains(first), peek()?.type == .leftBrace {
-            return try parseCollectionLiteral(kind: first)
-        }
-
-        if let collected = try parseCollectedExpression(named: first) { return collected }
-
-        if peek()?.type == .leftParen {
-            advance()  // Consume the name
-            let arguments = try parseCallArguments(forOperation: first)
-            return makeBareInvocation(name: first, arguments: arguments)
-        }
-
-        advance()
-        var segments = [first]
-        while case .doubleColon = current()?.type {
-            advance()
-            segments.append(try parseNameSegment(describing: "name after '::'"))
-        }
-        return MTLExpression(qualifiedReference(segments))
-    }
-
-    /// Builds the node for a name written with `::` separators.
-    ///
-    /// A single segment is a variable. Inside the arguments of a type operation
-    /// every qualified name is a type. Elsewhere `package::Type` is a type and
-    /// `package::Enumeration::literal` is an enumeration literal.
-    private func qualifiedReference(_ segments: [String]) -> any AQLExpression {
-        guard segments.count > 1 else { return AQLVariableExpression(name: segments[0]) }
-        let last = segments[segments.count - 1]
-        let packageSegments = segments.dropLast()
-        let separator = MTLSyntax.qualifiedNameSeparator
-        if typeArgumentDepth > 0 || segments.count == 2 {
-            return AQLTypeLiteralExpression(
-                packageName: packageSegments.joined(separator: separator), typeName: last)
-        }
-        return AQLEnumLiteralExpression(
-            packageName: segments.dropLast(2).joined(separator: separator),
-            enumName: segments[segments.count - 2], literal: last)
-    }
-
-    /// Parses `Kind{element, element}`.
-    private func parseCollectionLiteral(kind: String) throws -> MTLExpression {
-        advance()  // Consume the kind
-        try expect(.leftBrace)
-        var elements: [any AQLExpression] = []
-        if current()?.type != .rightBrace {
-            while true {
-                elements.append(try parseExpression().aqlExpression)
-                guard case .comma = current()?.type else { break }
-                advance()
-            }
-        }
-        try expect(.rightBrace)
-        let literalKind = AQLCollectionLiteralExpression.Kind(rawValue: kind) ?? .sequence
-        return MTLExpression(AQLCollectionLiteralExpression(kind: literalKind, elements: elements))
-    }
-
     /// Parses `(argument, argument)`, where an argument may be a lambda such as `x | body`.
     ///
-    /// - Parameters:
-    ///   - operation: The name of the operation being called, if any. Arguments of type
-    ///     operations denote types.
-    ///   - afterArrow: Whether the call follows `->`. Arguments of iterating operations may then
-    ///     omit the iterator.
-    fileprivate func parseCallArguments(
-        forOperation operation: String? = nil, afterArrow: Bool = false
-    ) throws -> [any AQLExpression] {
-        try expect(.leftParen)
-        let takesTypes = operation.map { MTLSyntax.typeArgumentOperationNames.contains($0) } ?? false
-        let iterates = afterArrow && (operation.map { MTLSyntax.iteratorOperationNames.contains($0) } ?? false)
-        if takesTypes { typeArgumentDepth += 1 }
-        defer { if takesTypes { typeArgumentDepth -= 1 } }
-        var arguments: [any AQLExpression] = []
-        if current()?.type != .rightParen {
-            while true {
-                arguments.append(try parseCallArgument(iterates: iterates))
-                guard case .comma = current()?.type else { break }
-                advance()
-            }
+    /// - Parameter operation: The name of the operation being called. Arguments of type
+    ///   operations denote types.
+    fileprivate func parseCallArguments(forOperation operation: String? = nil) throws -> [any AQLExpression] {
+        try withAQLCursor { cursor in
+            var delegate = MTLParserDelegate()
+            return try AQLParser.parseCallArguments(&cursor, delegate: &delegate, forOperation: operation)
         }
-        try expect(.rightParen)
-        return arguments
-    }
-
-    /// Parses one call argument, which is a lambda or an expression.
-    private func parseCallArgument(iterates: Bool) throws -> any AQLExpression {
-        if let header = try parseLambdaHeader() {
-            let body = try parseExpression()
-            return AQLLambdaExpression(iterator: header.name, body: body.aqlExpression)
-        }
-        if iterates {
-            implicitReceiverDepth += 1
-            defer { implicitReceiverDepth -= 1 }
-            let body = try parseExpression()
-            return AQLLambdaExpression(iterator: MTLSyntax.selfVariable, body: body.aqlExpression)
-        }
-        return try parseExpression().aqlExpression
-    }
-
-    /// Parses the `x |` or `x : Type |` that starts a lambda, if one is present.
-    ///
-    /// - Returns: The iterator name and type, or `nil` (with nothing consumed) if there is no lambda header.
-    fileprivate func parseLambdaHeader() throws -> (name: String, type: String?)? {
-        let saved = position
-        let name: String
-        switch current()?.type {
-        case .identifier(let id), .keyword(let id):
-            name = id
-            advance()
-        default:
-            return nil
-        }
-
-        var type: String?
-        if case .colon = current()?.type {
-            advance()
-            guard let parsed = try? parseTypeName() else {
-                position = saved
-                return nil
-            }
-            type = parsed
-        }
-
-        guard case .pipe = current()?.type else {
-            position = saved
-            return nil
-        }
-        advance()
-        return (name, type)
-    }
-
-    /// Parses the arguments of a `->name(...)` operation that has no dedicated AQL node.
-    fileprivate func parseGenericCollectionOperation(named name: String, source: MTLExpression) throws -> MTLExpression {
-        var arguments: [any AQLExpression] = []
-        if current()?.type == .leftParen {
-            arguments = try parseCallArguments(forOperation: name, afterArrow: true)
-        }
-        return MTLExpression(
-            AQLCallExpression(
-                source: source.aqlExpression, methodName: name, arguments: arguments, usesArrow: true)
-        )
-    }
-
-    /// Builds the node for `receiver.name(arguments)`.
-    ///
-    /// OCL type operations become plain AQL calls. Every other name becomes an
-    /// invocation that is resolved against the module's templates, queries, and
-    /// macros at run time before falling back to the AQL library.
-    fileprivate func makeInvocation(
-        name: String,
-        receiver: (any AQLExpression)?,
-        arguments: [any AQLExpression]
-    ) -> MTLExpression {
-        let call = AQLCallExpression(source: receiver, methodName: name, arguments: arguments)
-        if MTLSyntax.typeOperationNames.contains(name) {
-            return MTLExpression(call)
-        }
-        return MTLExpression(
-            MTLInvocationExpression(name: name, receiver: receiver, arguments: arguments, fallback: call)
-        )
-    }
-
-    /// Builds the node for a call without an explicit receiver: `name(arguments)`.
-    ///
-    /// Inside an iterator body or `post` expression, and for OCL type
-    /// operations, the receiver is the implicit `self`.
-    private func makeBareInvocation(name: String, arguments: [any AQLExpression]) -> MTLExpression {
-        let implicitSelf = AQLVariableExpression(name: MTLSyntax.selfVariable)
-        if MTLSyntax.typeOperationNames.contains(name) {
-            return makeInvocation(name: name, receiver: implicitSelf, arguments: arguments)
-        }
-        let appliesToSelf = implicitReceiverDepth > 0 && !MTLSyntax.standaloneFunctionNames.contains(name)
-        return makeInvocation(name: name, receiver: appliesToSelf ? implicitSelf : nil, arguments: arguments)
     }
 }
 
@@ -2796,18 +2224,6 @@ extension MTLSyntaxParser {
         return MTLEmitStatement(
             setName: setName, separator: separator, order: order, rendersOnce: rendersOnce,
             body: MTLBlock(statements: block.statements, inlined: true))
-    }
-
-    /// Parses `collected('set')` when the identifier names it; otherwise returns nil and consumes nothing.
-    fileprivate func parseCollectedExpression(named name: String) throws -> MTLExpression? {
-        guard name == MTLDeferredBlockNames.collectedFunction, peek()?.type == .leftParen else {
-            return nil
-        }
-        advance()  // Consume the name
-        advance()  // Consume '('
-        let setName = try parseExpression()
-        try expect(.rightParen)
-        return MTLExpression(MTLCollectedExpression(setName: setName.aqlExpression))
     }
 
     /// Parses `[merge (start, end, generatedTag, keepTag, strategy, options...)/]`;
