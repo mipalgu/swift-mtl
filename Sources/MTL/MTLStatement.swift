@@ -32,6 +32,11 @@ import Foundation
 /// thread-safe access to shared execution context and writer state.
 public protocol MTLStatement: Sendable, Equatable, Hashable {
 
+    /// Where the statement was written, if it was parsed from source text.
+    ///
+    /// The origin never takes part in equality or hashing.
+    var origin: SourceOrigin { get }
+
     /// Indicates whether this statement spans multiple lines.
     ///
     /// Multi-line statements typically include control flow constructs
@@ -56,6 +61,11 @@ public protocol MTLStatement: Sendable, Equatable, Hashable {
     func execute(in context: MTLExecutionContext) async throws
 }
 
+extension MTLStatement {
+    /// An origin without a range, for statements that were not parsed from source text.
+    public var origin: SourceOrigin { SourceOrigin() }
+}
+
 // MARK: - Text and Expression Statements
 
 /// A statement that outputs literal text to the current writer.
@@ -70,6 +80,8 @@ public protocol MTLStatement: Sendable, Equatable, Hashable {
 /// let text = MTLTextStatement(value: "public class ")
 /// ```
 public struct MTLTextStatement: MTLStatement {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// The literal text to output.
     public let value: String
@@ -86,7 +98,12 @@ public struct MTLTextStatement: MTLStatement {
     ///   - value: The literal text to output
     ///   - multiLines: Whether this text spans multiple lines (default: false)
     ///   - newLineNeeded: Whether to add a newline after the text (default: false)
-    public init(value: String, multiLines: Bool = false, newLineNeeded: Bool = false) {
+    ///   - origin: Where the construct was written, if known (default: none).
+    public init(
+        value: String, multiLines: Bool = false, newLineNeeded: Bool = false,
+        origin: SourceOrigin = .init()
+    ) {
+        self.origin = origin
         self.value = value
         self.multiLines = multiLines
         self.newLineNeeded = newLineNeeded
@@ -120,6 +137,8 @@ public struct MTLTextStatement: MTLStatement {
 /// let exprStmt = MTLExpressionStatement(expression: nameExpr)
 /// ```
 public struct MTLExpressionStatement: MTLStatement {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// The expression to evaluate and output.
     public let expression: MTLExpression
@@ -144,11 +163,14 @@ public struct MTLExpressionStatement: MTLStatement {
     ///   - multiLines: Whether this expression spans multiple lines (default: false)
     ///   - newLineNeeded: Whether to add a newline after the result (default: false)
     ///   - followedByLineBreak: Whether a line break in the template text follows the tag
+    ///   - origin: Where the construct was written, if known (default: none).
     ///     directly (default: false)
     public init(
         expression: MTLExpression, multiLines: Bool = false, newLineNeeded: Bool = false,
-        followedByLineBreak: Bool = false
+        followedByLineBreak: Bool = false,
+        origin: SourceOrigin = .init()
     ) {
+        self.origin = origin
         self.expression = expression
         self.multiLines = multiLines
         self.newLineNeeded = newLineNeeded
@@ -180,6 +202,8 @@ public struct MTLExpressionStatement: MTLStatement {
 /// Newline statements allow explicit control over line breaks and indentation
 /// in generated text.
 public struct MTLNewLineStatement: MTLStatement {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// Whether to apply indentation after the newline.
     public let indentationNeeded: Bool
@@ -196,9 +220,12 @@ public struct MTLNewLineStatement: MTLStatement {
     ///   - indentationNeeded: Whether to indent after the newline (default: true)
     ///   - multiLines: Whether this statement is multi-line (default: false)
     ///   - newLineNeeded: Whether an additional newline is needed (default: false)
+    ///   - origin: Where the construct was written, if known (default: none).
     public init(
-        indentationNeeded: Bool = true, multiLines: Bool = false, newLineNeeded: Bool = false
+        indentationNeeded: Bool = true, multiLines: Bool = false, newLineNeeded: Bool = false,
+        origin: SourceOrigin = .init()
     ) {
+        self.origin = origin
         self.indentationNeeded = indentationNeeded
         self.multiLines = multiLines
         self.newLineNeeded = newLineNeeded
@@ -218,6 +245,8 @@ public struct MTLNewLineStatement: MTLStatement {
 /// Comments in MTL templates are preserved in the AST for documentation
 /// and debugging purposes but do not generate any text in the output.
 public struct MTLComment: MTLStatement {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// The comment text.
     public let value: String
@@ -230,7 +259,9 @@ public struct MTLComment: MTLStatement {
     /// - Parameters:
     ///   - value: The comment text
     ///   - multiLines: Whether this comment spans multiple lines (default: true)
-    public init(value: String, multiLines: Bool = true) {
+    ///   - origin: Where the construct was written, if known (default: none).
+    public init(value: String, multiLines: Bool = true, origin: SourceOrigin = .init()) {
+        self.origin = origin
         self.value = value
         self.multiLines = multiLines
     }
@@ -275,6 +306,8 @@ public enum MTLOpenMode: String, Sendable, Codable, Equatable, Hashable {
 /// )
 /// ```
 public struct MTLForStatement: MTLStatement {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// The variable binding for the loop.
     public let binding: MTLBinding
@@ -307,11 +340,14 @@ public struct MTLForStatement: MTLStatement {
     ///   - after: Optional text output after the last iteration (default: nil)
     ///   - body: The loop body
     ///   - multiLines: Whether this is multi-line (default: true)
+    ///   - origin: Where the construct was written, if known (default: none).
     public init(
         binding: MTLBinding, separator: MTLExpression? = nil,
         before: MTLExpression? = nil, after: MTLExpression? = nil,
-        body: MTLBlock, multiLines: Bool = true
+        body: MTLBlock, multiLines: Bool = true,
+        origin: SourceOrigin = .init()
     ) {
+        self.origin = origin
         self.binding = binding
         self.separator = separator
         self.before = before
@@ -384,6 +420,8 @@ public struct MTLForStatement: MTLStatement {
 /// If statements provide conditional execution in MTL templates, supporting
 /// if/elseif/else chains for complex branching logic.
 public struct MTLIfStatement: MTLStatement {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// The condition expression.
     public let condition: MTLExpression
@@ -408,13 +446,16 @@ public struct MTLIfStatement: MTLStatement {
     ///   - elseIfBlocks: Optional elseif conditions and blocks (default: empty)
     ///   - elseBlock: Optional else block (default: nil)
     ///   - multiLines: Whether this is multi-line (default: true)
+    ///   - origin: Where the construct was written, if known (default: none).
     public init(
         condition: MTLExpression,
         thenBlock: MTLBlock,
         elseIfBlocks: [(MTLExpression, MTLBlock)] = [],
         elseBlock: MTLBlock? = nil,
-        multiLines: Bool = true
+        multiLines: Bool = true,
+        origin: SourceOrigin = .init()
     ) {
+        self.origin = origin
         self.condition = condition
         self.thenBlock = thenBlock
         self.elseIfBlocks = elseIfBlocks
@@ -485,6 +526,8 @@ public struct MTLIfStatement: MTLStatement {
 /// Let statements create temporary variables within a nested scope, allowing
 /// computed values to be reused within template sections.
 public struct MTLLetStatement: MTLStatement {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// The variable bindings.
     public let variables: [MTLBinding]
@@ -501,7 +544,9 @@ public struct MTLLetStatement: MTLStatement {
     ///   - variables: The variable bindings
     ///   - body: The block to execute
     ///   - multiLines: Whether this is multi-line (default: true)
-    public init(variables: [MTLBinding], body: MTLBlock, multiLines: Bool = true) {
+    ///   - origin: Where the construct was written, if known (default: none).
+    public init(variables: [MTLBinding], body: MTLBlock, multiLines: Bool = true, origin: SourceOrigin = .init()) {
+        self.origin = origin
         self.variables = variables
         self.body = body
         self.multiLines = multiLines
@@ -531,6 +576,8 @@ public struct MTLLetStatement: MTLStatement {
 /// File statements create and manage output files, allowing templates to
 /// generate multiple files from a single execution.
 public struct MTLFileStatement: MTLStatement {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// Expression that computes the file path.
     public let url: MTLExpression
@@ -569,6 +616,7 @@ public struct MTLFileStatement: MTLStatement {
     ///   - options: The per-file options (default: none)
     ///   - body: The file content block
     ///   - multiLines: Whether this is multi-line (default: true)
+    ///   - origin: Where the construct was written, if known (default: none).
     public init(
         url: MTLExpression,
         mode: MTLOpenMode = .overwrite,
@@ -576,8 +624,10 @@ public struct MTLFileStatement: MTLStatement {
         charset: MTLExpression? = nil,
         options: MTLFileOptions = MTLFileOptions(),
         body: MTLBlock,
-        multiLines: Bool = true
+        multiLines: Bool = true,
+        origin: SourceOrigin = .init()
     ) {
+        self.origin = origin
         self.url = url
         self.mode = mode
         self.modeExpression = modeExpression
@@ -643,6 +693,8 @@ public struct MTLFileStatement: MTLStatement {
 
 /// A protected area statement for preserving user code across generations.
 public struct MTLProtectedArea: MTLStatement {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// Expression that computes the protected area ID.
     public let id: MTLExpression
@@ -664,8 +716,10 @@ public struct MTLProtectedArea: MTLStatement {
         startTagPrefix: MTLExpression? = nil,
         endTagPrefix: MTLExpression? = nil,
         body: MTLBlock,
-        multiLines: Bool = true
+        multiLines: Bool = true,
+        origin: SourceOrigin = .init()
     ) {
+        self.origin = origin
         self.id = id
         self.startTagPrefix = startTagPrefix
         self.endTagPrefix = endTagPrefix
@@ -724,6 +778,8 @@ public struct MTLProtectedArea: MTLStatement {
 
 /// A trace statement for recording traceability links.
 public struct MTLTrace: MTLStatement {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// Expression that identifies the source element.
     public let sourceExpression: MTLExpression
@@ -734,7 +790,11 @@ public struct MTLTrace: MTLStatement {
     /// Whether this statement spans multiple lines.
     public let multiLines: Bool
 
-    public init(sourceExpression: MTLExpression, body: MTLBlock, multiLines: Bool = true) {
+    public init(
+        sourceExpression: MTLExpression, body: MTLBlock, multiLines: Bool = true,
+        origin: SourceOrigin = .init()
+    ) {
+        self.origin = origin
         self.sourceExpression = sourceExpression
         self.body = body
         self.multiLines = multiLines
@@ -759,6 +819,8 @@ public struct MTLTrace: MTLStatement {
 
 /// A macro invocation statement.
 public struct MTLMacroInvocation: MTLStatement {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// The name of the macro to invoke.
     public let macroName: String
@@ -776,8 +838,10 @@ public struct MTLMacroInvocation: MTLStatement {
         macroName: String,
         arguments: [MTLExpression] = [],
         bodyContent: MTLBlock? = nil,
-        multiLines: Bool = true
+        multiLines: Bool = true,
+        origin: SourceOrigin = .init()
     ) {
+        self.origin = origin
         self.macroName = macroName
         self.arguments = arguments
         self.bodyContent = bodyContent

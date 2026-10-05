@@ -6,6 +6,7 @@
 //  Copyright (c) 2025 Rene Hexel. All rights reserved.
 //
 
+import EMFBase
 import Foundation
 
 // MARK: - MTL Block
@@ -47,6 +48,8 @@ import Foundation
 /// - Note: MTL blocks use type erasure to store heterogeneous statement collections
 ///   while maintaining `Equatable` and `Hashable` conformance.
 public struct MTLBlock: Sendable, Equatable, Hashable {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     // MARK: - Properties
 
@@ -69,7 +72,9 @@ public struct MTLBlock: Sendable, Equatable, Hashable {
     /// - Parameters:
     ///   - statements: The statements to execute in this block
     ///   - inlined: Whether this block is inlined (default: false)
-    public init(statements: [any MTLStatement], inlined: Bool = false) {
+    ///   - origin: Where the construct was written, if known (default: none).
+    public init(statements: [any MTLStatement], inlined: Bool = false, origin: SourceOrigin = .init()) {
+        self.origin = origin
         self.statements = statements
         self.inlined = inlined
     }

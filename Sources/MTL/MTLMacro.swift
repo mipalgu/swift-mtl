@@ -88,6 +88,8 @@ import Foundation
 /// - Note: Macros are immutable value types designed for safe concurrent
 ///   access during template execution.
 public struct MTLMacro: Sendable, Equatable, Hashable {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     // MARK: - Properties
 
@@ -131,6 +133,7 @@ public struct MTLMacro: Sendable, Equatable, Hashable {
     ///   - bodyParameter: Optional body parameter name (default: nil)
     ///   - body: The macro expansion body
     ///   - documentation: Optional documentation (default: nil)
+    ///   - origin: Where the construct was written, if known (default: none).
     ///
     /// - Precondition: The macro name must be a non-empty string
     /// - Precondition: If bodyParameter is specified, it must not be empty
@@ -139,8 +142,10 @@ public struct MTLMacro: Sendable, Equatable, Hashable {
         parameters: [MTLVariable] = [],
         bodyParameter: String? = nil,
         body: MTLBlock,
-        documentation: String? = nil
+        documentation: String? = nil,
+        origin: SourceOrigin = .init()
     ) {
+        self.origin = origin
         precondition(!name.isEmpty, "Macro name must not be empty")
         if let bodyParam = bodyParameter {
             precondition(!bodyParam.isEmpty, "Body parameter name must not be empty")

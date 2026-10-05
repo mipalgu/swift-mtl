@@ -7,6 +7,7 @@
 //
 
 import AQL
+import EMFBase
 
 /// The hooks through which MTL shapes the expressions that the AQL parser builds.
 ///
@@ -39,15 +40,19 @@ struct MTLParserDelegate: AQLParserDelegate {
     ///   - name: The name of the operation.
     ///   - receiver: The receiver, if any.
     ///   - arguments: The argument expressions.
+    ///   - origin: Where the call was written.
     /// - Returns: The node for the call.
     mutating func makeCall(
-        name: String, receiver: (any AQLExpression)?, arguments: [any AQLExpression]
+        name: String, receiver: (any AQLExpression)?, arguments: [any AQLExpression],
+        origin: SourceOrigin
     ) -> any AQLExpression {
-        let call = AQLCallExpression(source: receiver, methodName: name, arguments: arguments)
+        let call = AQLCallExpression(
+            source: receiver, methodName: name, arguments: arguments, origin: origin)
         if MTLSyntax.typeOperationNames.contains(name) {
             return call
         }
-        return MTLInvocationExpression(name: name, receiver: receiver, arguments: arguments, fallback: call)
+        return MTLInvocationExpression(
+            name: name, receiver: receiver, arguments: arguments, fallback: call, origin: origin)
     }
 
     /// Parses `collected('set')` when the name is the collected function.
@@ -64,11 +69,12 @@ struct MTLParserDelegate: AQLParserDelegate {
         guard name == MTLDeferredBlockNames.collectedFunction, cursor.peekKind() == .leftParen else {
             return nil
         }
+        let start = cursor.startPosition
         cursor.advance()  // Consume the name
         cursor.advance()  // Consume '('
         let setName = try AQLParser.parseExpression(&cursor, delegate: &self)
         try cursor.expect(.rightParen)
-        return MTLCollectedExpression(setName: setName)
+        return MTLCollectedExpression(setName: setName, origin: cursor.origin(from: start))
     }
 }
 
@@ -77,9 +83,12 @@ extension MTLToken {
     /// The token as the AQL parser reads it.
     ///
     /// Text and directive-level tokens that AQL does not interpret become
-    /// ``AQLTokenKind/other``. The position carries line and column only.
-    var aqlToken: AQLToken {
-        AQLToken(kind: type.aqlKind, span: AQLSourceSpan(line: line, column: column))
+    /// ``AQLTokenKind/other``.
+    ///
+    /// - Parameter table: The line table of the source text, to locate the token.
+    /// - Returns: The token with its range in the source text.
+    func aqlToken(using table: LineTable) -> AQLToken {
+        AQLToken(kind: type.aqlKind, range: table.range(fromUTF8Offset: offset, to: endOffset))
     }
 }
 
@@ -109,6 +118,7 @@ extension MTLTokenType {
         case .booleanLiteral(let value): return .booleanLiteral(value)
         case .operator(let text): return .operator(text)
         case .comment(let text): return .comment(text)
+        case .invalid(let text): return .invalid(text)
         case .eof: return .eof
         case .text, .commentDirective, .documentation, .whitespace, .newline: return .other
         }

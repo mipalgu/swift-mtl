@@ -6,6 +6,7 @@
 //  Copyright (c) 2025 Rene Hexel. All rights reserved.
 //
 
+import EMFBase
 import Foundation
 
 // MARK: - MTL Visibility
@@ -81,6 +82,8 @@ public enum MTLVisibility: String, Sendable, Codable, Equatable, Hashable {
 /// - Note: Templates are immutable value types designed for safe concurrent
 ///   access during parallel template execution.
 public struct MTLTemplate: Sendable, Equatable, Hashable {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     // MARK: - Properties
 
@@ -153,6 +156,7 @@ public struct MTLTemplate: Sendable, Equatable, Hashable {
     ///   - isMain: Whether this is a main template (default: false)
     ///   - overrides: Optional parent template name (default: nil)
     ///   - documentation: Optional documentation (default: nil)
+    ///   - origin: Where the construct was written, if known (default: none).
     ///
     /// - Precondition: The template name must be a non-empty string
     public init(
@@ -164,8 +168,10 @@ public struct MTLTemplate: Sendable, Equatable, Hashable {
         body: MTLBlock,
         isMain: Bool = false,
         overrides: String? = nil,
-        documentation: String? = nil
+        documentation: String? = nil,
+        origin: SourceOrigin = .init()
     ) {
+        self.origin = origin
         precondition(!name.isEmpty, "Template name must not be empty")
 
         self.name = name

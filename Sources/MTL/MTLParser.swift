@@ -18,6 +18,29 @@ private func parseError(_ message: String, line: Int, column: Int) -> MTLParseEr
     return .invalidSyntax("Line \(line), column \(column): \(message)")
 }
 
+// MARK: - Diagnostics
+
+/// A lexical problem found while reading template source text with recovery.
+struct MTLLexicalProblem {
+    /// The kind of problem.
+    let code: MTLDiagnosticCode
+
+    /// What is wrong.
+    let message: String
+
+    /// The line on which the offending text starts, counting from 1.
+    let line: Int
+
+    /// The column at which the offending text starts, counting from 1.
+    let column: Int
+
+    /// The UTF-8 offset at which the offending text starts.
+    let offset: Int
+
+    /// The UTF-8 offset just after the offending text.
+    let endOffset: Int
+}
+
 // MARK: - Token Types
 
 /// Token types for MTL lexical analysis.
@@ -54,6 +77,7 @@ enum MTLTokenType: Equatable {
     case `operator`(String) // +, -, *, /, =, <>, <, >, etc.
 
     // Special
+    case invalid(String)            // text that is not a valid token, as written
     case comment(String)
     case commentDirective(String)   // complete [comment .../] or [comment]...[/comment]
     case documentation(String)      // complete [** ... **/]
@@ -75,9 +99,30 @@ enum MTLTokenType: Equatable {
 
 /// A token with its type, value, and position information.
 struct MTLToken: Equatable {
+    /// The value of ``endOffset`` while the lexer has not yet seen where the token ends.
+    static let pendingEnd = -1
+
     let type: MTLTokenType
+
+    /// The line on which the token starts, counting from 1.
     let line: Int
+
+    /// The column at which the token starts, counting characters from 1.
     let column: Int
+
+    /// The UTF-8 offset at which the token starts.
+    let offset: Int
+
+    /// The UTF-8 offset just after the token.
+    var endOffset: Int
+
+    init(type: MTLTokenType, line: Int, column: Int, offset: Int = 0, endOffset: Int? = nil) {
+        self.type = type
+        self.line = line
+        self.column = column
+        self.offset = offset
+        self.endOffset = endOffset ?? offset
+    }
 
     var isWhitespace: Bool { type.isWhitespace }
 }
@@ -102,7 +147,7 @@ extension MTLSyntax {
 /// The lexer operates in two modes:
 /// - TEXT mode: Accumulates literal text until `[` is encountered
 /// - DIRECTIVE mode: Standard tokenization inside `[...]` blocks
-private actor MTLLexer {
+final class MTLLexer {
 
     // MARK: - Lexing Mode
 
@@ -154,20 +199,62 @@ private actor MTLLexer {
 
     // MARK: - Properties
 
-    private let input: String
-    private var position: String.Index
-    private var line: Int = 1
-    private var column: Int = 1
+    fileprivate let input: String
+    fileprivate var position: String.Index
+    fileprivate var line: Int = 1
+    fileprivate var column: Int = 1
+
+    /// The UTF-8 offset of ``position``.
+    fileprivate var offset: Int = 0
     private var mode: LexingMode = .text
-    private var textBuffer: String = ""
+    fileprivate var textBuffer: String = ""
+
+    /// Where the text in ``textBuffer`` started.
+    fileprivate var textStart: Mark?
     private let enableDebugging: Bool
+
+    /// Whether lexical problems are collected instead of thrown.
+    fileprivate let recovering: Bool
+
+    /// The lexical problems found so far, when ``recovering``.
+    private(set) var problems: [MTLLexicalProblem] = []
 
     // MARK: - Initialization
 
-    init(_ input: String, enableDebugging: Bool = false) {
+    /// Creates a lexer.
+    ///
+    /// - Parameters:
+    ///   - input: The template source.
+    ///   - enableDebugging: Whether the lexer logs its progress.
+    ///   - recovering: Whether lexical problems are collected in ``problems`` and replaced by
+    ///     invalid tokens instead of being thrown.
+    init(_ input: String, enableDebugging: Bool = false, recovering: Bool = false) {
         self.input = input
         self.position = input.startIndex
         self.enableDebugging = enableDebugging
+        self.recovering = recovering
+    }
+
+    /// A position in the input.
+    fileprivate struct Mark {
+        let line: Int
+        let column: Int
+        let offset: Int
+    }
+
+    fileprivate func mark() -> Mark { Mark(line: line, column: column, offset: offset) }
+
+    /// Records a lexical problem.
+    ///
+    /// - Parameters:
+    ///   - code: The kind of problem.
+    ///   - message: What is wrong.
+    ///   - start: Where the offending text starts.
+    fileprivate func report(_ code: MTLDiagnosticCode, _ message: String, from start: Mark) {
+        problems.append(
+            MTLLexicalProblem(
+                code: code, message: message, line: start.line, column: start.column,
+                offset: start.offset, endOffset: max(offset, start.offset)))
     }
 
     // MARK: - Tokenization
@@ -176,21 +263,22 @@ private actor MTLLexer {
         var tokens: [MTLToken] = []
 
         while position < input.endIndex {
+            let before = tokens.count
             switch mode {
             case .text:
                 try tokenizeText(&tokens)
             case .directive:
                 try tokenizeDirective(&tokens)
             }
+            for index in before..<tokens.count where tokens[index].endOffset == MTLToken.pendingEnd {
+                tokens[index].endOffset = offset
+            }
         }
 
         // Flush any remaining text
-        if !textBuffer.isEmpty {
-            tokens.append(MTLToken(type: .text(textBuffer), line: line, column: column))
-            textBuffer = ""
-        }
+        flushPendingText(&tokens)
 
-        tokens.append(MTLToken(type: .eof, line: line, column: column))
+        tokens.append(MTLToken(type: .eof, line: line, column: column, offset: offset))
 
         if enableDebugging {
             debugPrint("Tokenized \(tokens.count) tokens")
@@ -209,18 +297,18 @@ private actor MTLLexer {
         }
 
         if char == "[" {
-            // Flush text buffer
-            if !textBuffer.isEmpty {
-                tokens.append(MTLToken(type: .text(textBuffer), line: line, column: column - textBuffer.count))
-                textBuffer = ""
-            }
+            flushPendingText(&tokens)
 
             // Switch to directive mode
             mode = .directive
-            tokens.append(MTLToken(type: .leftBracket, line: line, column: column))
+            tokens.append(
+                MTLToken(
+                    type: .leftBracket, line: line, column: column, offset: offset,
+                    endOffset: MTLToken.pendingEnd))
             advance()
         } else {
             // Accumulate text
+            if textBuffer.isEmpty { textStart = mark() }
             textBuffer.append(char)
             advance()
         }
@@ -236,6 +324,7 @@ private actor MTLLexer {
         let char = input[position]
         let tokenLine = line
         let tokenColumn = column
+        let tokenOffset = offset
 
         // Comments
         if char == "-" && peek() == "-" {
@@ -245,7 +334,7 @@ private actor MTLLexer {
 
         // Right bracket - switch back to text mode
         if char == "]" {
-            tokens.append(MTLToken(type: .rightBracket, line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .rightBracket, line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
             mode = .text
             return
@@ -278,6 +367,7 @@ private actor MTLLexer {
     private func tokenizeComment(_ tokens: inout [MTLToken]) throws {
         let tokenLine = line
         let tokenColumn = column
+        let tokenOffset = offset
         var comment = ""
 
         // Skip --
@@ -294,12 +384,15 @@ private actor MTLLexer {
             advance()
         }
 
-        tokens.append(MTLToken(type: .comment(comment.trimmingCharacters(in: .whitespaces)), line: tokenLine, column: tokenColumn))
+        tokens.append(MTLToken(type: .comment(comment.trimmingCharacters(in: .whitespaces)), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
     }
 
     private func tokenizeString(_ tokens: inout [MTLToken]) throws {
         let tokenLine = line
         let tokenColumn = column
+        let tokenOffset = offset
+        let startPosition = position
+        let start = mark()
         var string = ""
 
         // Skip opening '
@@ -317,14 +410,15 @@ private actor MTLLexer {
                 } else {
                     // End of string
                     advance()
-                    tokens.append(MTLToken(type: .stringLiteral(string), line: tokenLine, column: tokenColumn))
+                    tokens.append(MTLToken(type: .stringLiteral(string), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
                     return
                 }
             } else if char == "\\" {
                 // Escape sequences
                 advance()
                 guard position < input.endIndex else {
-                    throw parseError("Unterminated string literal", line: tokenLine, column: tokenColumn)
+                    try unterminatedString(&tokens, from: start, at: startPosition)
+                    return
                 }
                 let escaped = input[position]
                 switch escaped {
@@ -337,7 +431,7 @@ private actor MTLLexer {
                 case "'": string.append("'")
                 case "\"": string.append("\"")
                 case "u":
-                    string.append(try unicodeEscape(line: tokenLine, column: tokenColumn))
+                    string.append(try unicodeEscape(line: tokenLine, column: tokenColumn, start: start))
                     continue
                 default: string.append(escaped)
                 }
@@ -348,7 +442,38 @@ private actor MTLLexer {
             }
         }
 
-        throw parseError("Unterminated string literal", line: tokenLine, column: tokenColumn)
+        try unterminatedString(&tokens, from: start, at: startPosition)
+    }
+
+    /// Handles a string literal that runs to the end of the input.
+    ///
+    /// When recovering, the string is cut short at the end of its line (or the next `]`), and
+    /// the text is returned as an invalid token so that lexing can continue after it.
+    ///
+    /// - Parameters:
+    ///   - tokens: The token list that receives the invalid token.
+    ///   - start: Where the string started.
+    ///   - startPosition: The index of the opening quote.
+    /// - Throws: A parse error unless recovering.
+    private func unterminatedString(
+        _ tokens: inout [MTLToken], from start: Mark, at startPosition: String.Index
+    ) throws {
+        guard recovering else {
+            throw parseError("Unterminated string literal", line: start.line, column: start.column)
+        }
+        position = startPosition
+        line = start.line
+        column = start.column
+        offset = start.offset
+        advance()
+        while position < input.endIndex, !input[position].isNewline, input[position] != "]" {
+            advance()
+        }
+        report(.unterminatedString, "Unterminated string literal", from: start)
+        tokens.append(
+            MTLToken(
+                type: .invalid(String(input[startPosition..<position])), line: start.line,
+                column: start.column, offset: start.offset, endOffset: MTLToken.pendingEnd))
     }
 
     /// Reads the code unit(s) of a `\uXXXX` escape, with the cursor on the `u`.
@@ -362,22 +487,40 @@ private actor MTLLexer {
     ///   - column: The column at which the enclosing string starts.
     /// - Returns: The character the escape denotes.
     /// - Throws: A parse error when fewer than four hexadecimal digits follow.
-    private func unicodeEscape(line: Int, column: Int) throws -> Character {
+    private func unicodeEscape(line: Int, column: Int, start: Mark) throws -> Character {
+        struct MalformedEscape: Error {}
         func codeUnit() throws -> UInt32 {
             advance()  // the 'u'
             var value: UInt32 = 0
             for _ in 0..<4 {
                 guard position < input.endIndex, let digit = input[position].hexDigitValue else {
-                    throw parseError("Malformed unicode escape in string literal", line: line, column: column)
+                    throw MalformedEscape()
                 }
                 value = value * 16 + UInt32(digit)
                 advance()
             }
             return value
         }
+        do {
+            return try decodeEscape(codeUnit)
+        } catch is MalformedEscape {
+            guard recovering else {
+                throw parseError("Malformed unicode escape in string literal", line: line, column: column)
+            }
+            report(.malformedEscape, "Malformed unicode escape in string literal", from: start)
+            return "\u{FFFD}"
+        }
+    }
+
+    /// Decodes the escape that starts at the cursor, combining a surrogate pair.
+    ///
+    /// - Parameter codeUnit: Reads one `\uXXXX` code unit.
+    /// - Returns: The character the escape denotes.
+    /// - Throws: Whatever `codeUnit` throws.
+    private func decodeEscape(_ codeUnit: () throws -> UInt32) throws -> Character {
         let first = try codeUnit()
         if (0xD800...0xDBFF).contains(first), position < input.endIndex, input[position] == "\\" {
-            let resume = (position, self.line, self.column)
+            let resume = (position, self.line, self.column, self.offset)
             advance()
             if position < input.endIndex, input[position] == "u" {
                 let second = try codeUnit()
@@ -387,7 +530,7 @@ private actor MTLLexer {
                     return Character(scalar)
                 }
             }
-            (position, self.line, self.column) = resume
+            (position, self.line, self.column, self.offset) = resume
             return "\u{FFFD}"
         }
         return Unicode.Scalar(first).map(Character.init) ?? "\u{FFFD}"
@@ -396,6 +539,8 @@ private actor MTLLexer {
     private func tokenizeNumber(_ tokens: inout [MTLToken]) throws {
         let tokenLine = line
         let tokenColumn = column
+        let tokenOffset = offset
+        let mark = mark()
         var number = ""
         var hasDecimal = false
 
@@ -422,20 +567,42 @@ private actor MTLLexer {
 
         if hasDecimal {
             guard let value = Double(number) else {
-                throw parseError("Invalid real number: \(number)", line: tokenLine, column: tokenColumn)
+                try invalidNumber(&tokens, "Invalid real number: \(number)", text: number, from: mark)
+                return
             }
-            tokens.append(MTLToken(type: .realLiteral(value), line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .realLiteral(value), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
         } else {
             guard let value = Int(number) else {
-                throw parseError("Invalid integer: \(number)", line: tokenLine, column: tokenColumn)
+                try invalidNumber(&tokens, "Invalid integer: \(number)", text: number, from: mark)
+                return
             }
-            tokens.append(MTLToken(type: .integerLiteral(value), line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .integerLiteral(value), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
         }
+    }
+
+    /// Handles a number that cannot be represented.
+    ///
+    /// - Parameters:
+    ///   - tokens: The token list that receives the invalid token when recovering.
+    ///   - message: What is wrong.
+    ///   - text: The number as written.
+    ///   - start: Where the number started.
+    /// - Throws: A parse error unless recovering.
+    private func invalidNumber(
+        _ tokens: inout [MTLToken], _ message: String, text: String, from start: Mark
+    ) throws {
+        guard recovering else { throw parseError(message, line: start.line, column: start.column) }
+        report(.invalidNumber, message, from: start)
+        tokens.append(
+            MTLToken(
+                type: .invalid(text), line: start.line, column: start.column, offset: start.offset,
+                endOffset: MTLToken.pendingEnd))
     }
 
     private func tokenizeIdentifierOrKeyword(_ tokens: inout [MTLToken]) throws {
         let tokenLine = line
         let tokenColumn = column
+        let tokenOffset = offset
         var identifier = ""
 
         while position < input.endIndex {
@@ -450,45 +617,46 @@ private actor MTLLexer {
 
         // Check for boolean literals
         if identifier == "true" {
-            tokens.append(MTLToken(type: .booleanLiteral(true), line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .booleanLiteral(true), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
         } else if identifier == "false" {
-            tokens.append(MTLToken(type: .booleanLiteral(false), line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .booleanLiteral(false), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
         } else if Self.keywords.contains(identifier) {
-            tokens.append(MTLToken(type: .keyword(identifier), line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .keyword(identifier), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
         } else {
-            tokens.append(MTLToken(type: .identifier(identifier), line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .identifier(identifier), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
         }
     }
 
     private func tokenizeOperatorOrPunctuation(_ tokens: inout [MTLToken]) throws {
         let tokenLine = line
         let tokenColumn = column
+        let tokenOffset = offset
         let char = input[position]
 
         // Multi-character operators
         if char == "-" && peek() == ">" {
-            tokens.append(MTLToken(type: .operator("->"), line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .operator("->"), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
             advance()
             return
         }
 
         if char == "<" && peek() == ">" {
-            tokens.append(MTLToken(type: .operator("<>"), line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .operator("<>"), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
             advance()
             return
         }
 
         if char == "<" && peek() == "=" {
-            tokens.append(MTLToken(type: .operator("<="), line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .operator("<="), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
             advance()
             return
         }
 
         if char == ">" && peek() == "=" {
-            tokens.append(MTLToken(type: .operator(">="), line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .operator(">="), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
             advance()
             return
@@ -497,45 +665,54 @@ private actor MTLLexer {
         // Single-character tokens
         switch char {
         case "/":
-            tokens.append(MTLToken(type: .slash, line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .slash, line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
         case "(":
-            tokens.append(MTLToken(type: .leftParen, line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .leftParen, line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
         case ")":
-            tokens.append(MTLToken(type: .rightParen, line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .rightParen, line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
         case ",":
-            tokens.append(MTLToken(type: .comma, line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .comma, line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
         case ":":
             if peek() == ":" {
-                tokens.append(MTLToken(type: .doubleColon, line: tokenLine, column: tokenColumn))
+                tokens.append(MTLToken(type: .doubleColon, line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
                 advance()
             } else {
-                tokens.append(MTLToken(type: .colon, line: tokenLine, column: tokenColumn))
+                tokens.append(MTLToken(type: .colon, line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             }
             advance()
         case "{":
-            tokens.append(MTLToken(type: .leftBrace, line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .leftBrace, line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
         case "}":
-            tokens.append(MTLToken(type: .rightBrace, line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .rightBrace, line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
         case ".":
-            tokens.append(MTLToken(type: .dot, line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .dot, line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
         case "|":
-            tokens.append(MTLToken(type: .pipe, line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .pipe, line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
         case "?":
-            tokens.append(MTLToken(type: .questionMark, line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .questionMark, line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
         case "+", "-", "*", "=", "<", ">":
-            tokens.append(MTLToken(type: .operator(String(char)), line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .operator(String(char)), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
         default:
-            throw parseError("Unexpected character: '\(char)'", line: tokenLine, column: tokenColumn)
+            guard recovering else {
+                throw parseError("Unexpected character: '\(char)'", line: tokenLine, column: tokenColumn)
+            }
+            let start = mark()
+            advance()
+            report(.invalidCharacter, "Unexpected character: '\(char)'", from: start)
+            tokens.append(
+                MTLToken(
+                    type: .invalid(String(char)), line: tokenLine, column: tokenColumn,
+                    offset: tokenOffset, endOffset: MTLToken.pendingEnd))
         }
     }
 
@@ -545,12 +722,13 @@ private actor MTLLexer {
         guard position < input.endIndex else { return }
 
         let char = input[position]
-        if char == "\n" {
+        if char == "\n" || char == "\r\n" {
             line += 1
             column = 1
         } else {
             column += 1
         }
+        offset += char.utf8.count
 
         position = input.index(after: position)
     }
@@ -575,6 +753,45 @@ private actor MTLLexer {
     private func debugPrint(_ message: String) {
         if enableDebugging {
             print("[MTLLexer] \(message)")
+        }
+    }
+}
+
+// MARK: - Syntax Highlighting
+
+extension MTLSyntax {
+    /// Splits MTL template source into tokens for syntax highlighting.
+    ///
+    /// This never fails and does not parse. Template text, the brackets of directives, comments,
+    /// keywords, identifiers, literals, operators, and punctuation each come back as tokens
+    /// of the matching kind. Text that is not valid MTL comes back as ``SourceTokenKind/invalid``
+    /// tokens. Blanks inside directives belong to no token.
+    ///
+    /// - Parameter source: The MTL template source.
+    /// - Returns: The tokens in order, without an end-of-input token.
+    public static func tokens(in source: String) -> [SourceToken] {
+        let table = LineTable(source)
+        let lexer = MTLLexer(source, recovering: true)
+        let tokens = (try? lexer.tokenize()) ?? []
+        return tokens.compactMap { token in
+            guard let kind = token.type.highlightKind else { return nil }
+            return SourceToken(
+                kind: kind, range: table.range(fromUTF8Offset: token.offset, to: token.endOffset))
+        }
+    }
+}
+
+extension MTLTokenType {
+    /// The kind of highlighting token that corresponds to this token, or `nil` for tokens
+    /// that cover no text.
+    var highlightKind: SourceTokenKind? {
+        switch self {
+        case .text: return .text
+        case .leftBracket, .rightBracket: return .directive
+        case .commentDirective: return .comment
+        case .documentation: return .documentation
+        case .whitespace, .newline, .eof: return nil
+        default: return aqlKind.highlightKind
         }
     }
 }
@@ -681,13 +898,54 @@ public actor MTLParser {
 
         // Tokenize
         let lexer = MTLLexer(source, enableDebugging: enableDebugging)
-        let tokens = MTLStandaloneLines.apply(to: try await lexer.tokenize())
+        let tokens = MTLStandaloneLines.apply(to: try lexer.tokenize())
 
         debugPrint("Tokenization complete: \(tokens.count) tokens")
 
         // Parse
-        let parser = MTLSyntaxParser(tokens: tokens, enableDebugging: enableDebugging)
-        return try await parser.parseModule()
+        let parser = MTLSyntaxParser(
+            tokens: tokens, lineTable: LineTable(source), enableDebugging: enableDebugging)
+        return try parser.parseModule()
+    }
+
+    /// Parses MTL template source code, collecting the problems instead of stopping at the first.
+    ///
+    /// Parsing recovers at the boundaries of directives (skipping to the end of the directive,
+    /// or to the matching closing tag of a block) and of templates, queries, and macros, so
+    /// that one mistake does not hide the rest of the text. Constructs that cannot be parsed
+    /// are left out of the module. Unlike ``parse(_:filename:)``, nothing is thrown.
+    ///
+    /// - Parameters:
+    ///   - source: MTL template source code.
+    ///   - filename: The name of the file, recorded as the document of each diagnostic.
+    /// - Returns: The module (if its header could be read), the problems ordered by position,
+    ///   and the outline of the module.
+    public func parseDiagnosing(_ source: String, filename: String) async -> MTLParseResult {
+        let table = LineTable(source)
+        let lexer = MTLLexer(source, enableDebugging: enableDebugging, recovering: true)
+        let tokens = MTLStandaloneLines.apply(to: (try? lexer.tokenize()) ?? [])
+        let parser = MTLSyntaxParser(
+            tokens: tokens, lineTable: table, recovering: true, enableDebugging: enableDebugging)
+        let module = (try? parser.parseModuleRecovering()) ?? nil
+
+        let lexical = lexer.problems.map { problem in
+            SourceDiagnostic(
+                severity: .error, code: problem.code.rawValue, message: problem.message,
+                range: table.range(fromUTF8Offset: problem.offset, to: problem.endOffset),
+                document: filename)
+        }
+        let lexicalStarts = Set(lexical.compactMap { $0.range?.start.utf8Offset })
+        let syntactic = parser.diagnostics.filter {
+            !lexicalStarts.contains($0.range?.start.utf8Offset ?? -1)
+        }.map { diagnostic in
+            var located = diagnostic
+            located.document = filename
+            return located
+        }
+        let diagnostics = (lexical + syntactic).sorted {
+            ($0.range?.start.utf8Offset ?? 0) < ($1.range?.start.utf8Offset ?? 0)
+        }
+        return MTLParseResult(module: module, diagnostics: diagnostics, outline: parser.outlineNodes)
     }
 
     // MARK: - Debugging
@@ -702,16 +960,40 @@ public actor MTLParser {
 // MARK: - Syntax Parser
 
 /// Recursive descent parser for MTL syntax.
-private actor MTLSyntaxParser {
+final class MTLSyntaxParser {
 
     // MARK: - Properties
 
-    private let tokens: [MTLToken]
+    fileprivate let tokens: [MTLToken]
 
     /// The tokens as the AQL grammar reads them, index for index parallel to ``tokens``.
-    private let aqlTokens: [AQLToken]
-    private var position: Int = 0
+    fileprivate let aqlTokens: [AQLToken]
+    fileprivate var position: Int = 0
     private let enableDebugging: Bool
+
+    /// Converts offsets to positions.
+    fileprivate let lineTable: LineTable
+
+    /// Whether syntax problems are collected and skipped instead of thrown.
+    fileprivate let recovering: Bool
+
+    /// The problems found while recovering, in the order found.
+    private(set) var diagnostics: [SourceDiagnostic] = []
+
+    /// The declarations found while recovering.
+    fileprivate var outline: [OutlineNode] = []
+
+    /// The outline of the module found by ``parseModuleRecovering()``.
+    var outlineNodes: [OutlineNode] { outline }
+
+    /// The most recent problem that a parse method reported by throwing.
+    fileprivate var lastFailure: MTLFailure?
+
+    /// The range of the name of the declaration being parsed.
+    fileprivate var declarationNameRange: SourceRange?
+
+    /// The identifiers that outline nodes already use.
+    fileprivate var outlineIdentifiers: Set<String> = []
 
     /// Documentation comment waiting to be attached to the next declaration.
     private var pendingDocumentation: String?
@@ -723,23 +1005,64 @@ private actor MTLSyntaxParser {
 
     // MARK: - Initialization
 
-    init(tokens: [MTLToken], enableDebugging: Bool = false) {
+    /// Creates a parser.
+    ///
+    /// - Parameters:
+    ///   - tokens: The tokens of the source text, ending with the end-of-file token.
+    ///   - lineTable: The line table of the source text.
+    ///   - recovering: Whether syntax problems are collected and skipped instead of thrown.
+    ///   - enableDebugging: Whether the parser logs its progress.
+    init(
+        tokens: [MTLToken], lineTable: LineTable, recovering: Bool = false,
+        enableDebugging: Bool = false
+    ) {
         let significant = tokens.filter { !$0.isWhitespace }  // Skip whitespace tokens
         self.tokens = significant
-        self.aqlTokens = significant.map(\.aqlToken)
+        self.aqlTokens = significant.map { $0.aqlToken(using: lineTable) }
+        self.lineTable = lineTable
+        self.recovering = recovering
         self.enableDebugging = enableDebugging
     }
 
     // MARK: - Module Parsing
 
+    /// Parses the module, stopping at the first syntax error.
+    ///
+    /// - Returns: The module.
+    /// - Throws: ``MTLParseError`` for the first problem found.
     func parseModule() throws -> MTLModule {
+        guard let module = try parseModuleRecovering() else {
+            throw error("Expected module header")
+        }
+        return module
+    }
+
+    /// Parses the module, skipping what it cannot parse when ``recovering``.
+    ///
+    /// - Returns: The module, or `nil` when recovering and the module header is malformed.
+    /// - Throws: ``MTLParseError`` for the first problem found unless recovering.
+    func parseModuleRecovering() throws -> MTLModule? {
         debugPrint("Parsing module")
 
         // Parse the comments before the header, then the module header
         var encoding = skipModulePreamble() ?? MTLSyntax.defaultCharset
-        let header = try parseModuleHeader()
+        let headerStart = position
+        let header: ModuleHeader?
+        if recovering {
+            do {
+                header = try parseModuleHeader()
+            } catch let failure as MTLParseError {
+                recordFailure(failure)
+                skipDirective(from: headerStart)
+                header = nil
+            }
+        } else {
+            header = try parseModuleHeader()
+        }
 
-        debugPrint("Module: \(header.name), URIs: \(header.metamodelURIs)")
+        if let header {
+            debugPrint("Module: \(header.name), URIs: \(header.metamodelURIs)")
+        }
 
         // Parse module contents
         var templates: OrderedDictionary<String, MTLTemplate> = [:]
@@ -748,90 +1071,130 @@ private actor MTLSyntaxParser {
         var templateOverloads: [MTLTemplate] = []
         var queryOverloads: [MTLQuery] = []
         var imports: [String] = []
-        var extendsModule: String? = header.extends
+        var extendsModule: String? = header?.extends
         var mergeConfiguration: MTLMergeConfiguration? = nil
         var layoutConfiguration: MTLLayoutConfiguration? = nil
+        var members: [OutlineNode] = []
 
         // Parse top-level declarations
         while let token = current(), token.type != .eof {
             debugPrint("Parsing token: \(token.type)")
+            let declarationStart = position
+            var declarationParsed = false
 
-            switch token.type {
-            case .leftBracket:
-                advance()
-                guard let next = current() else {
-                    throw error("Unexpected end of input after '['")
-                }
-
-                switch next.type {
-                case .keyword("template"):
-                    advance()  // Consume 'template' keyword
-                    debugPrint("About to parse template, current token: \(current()?.type ?? .eof)")
-                    let template = try parseTemplate()
-                    try register(template, in: &templates, overloads: &templateOverloads)
-
-                case .keyword("query"):
-                    advance()  // Consume 'query' keyword
-                    let query = try parseQuery()
-                    try register(query, in: &queries, overloads: &queryOverloads)
-
-                case .keyword("macro"):
-                    advance()  // Consume 'macro' keyword
-                    let macro = try parseMacro()
-                    if macros[macro.name] != nil {
-                        throw error("Duplicate macro: \(macro.name)")
-                    }
-                    macros[macro.name] = macro
-
-                case .keyword("import"):
-                    advance()  // Consume 'import' keyword
-                    let importModule = try parseImport()
-                    imports.append(importModule)
-
-                case .keyword("extends"):
-                    advance()  // Consume 'extends' keyword
-                    extendsModule = try parseExtends()
-
-                case .keyword(MTLGenerationKeywords.merge):
-                    advance()  // Consume 'merge' keyword
-                    if mergeConfiguration != nil { throw error("Duplicate merge declaration") }
-                    mergeConfiguration = try parseMergeDeclaration()
-
-                case .keyword(MTLGenerationKeywords.layout):
-                    advance()  // Consume 'layout' keyword
-                    if layoutConfiguration != nil { throw error("Duplicate layout declaration") }
-                    layoutConfiguration = try parseLayoutDeclaration()
-
-                case .comment:
-                    // Skip comments
+            do {
+                switch token.type {
+                case .leftBracket:
                     advance()
-                    try expect(.rightBracket)
+                    guard let next = current() else {
+                        throw error("Unexpected end of input after '['")
+                    }
+
+                    switch next.type {
+                    case .keyword("template"):
+                        advance()  // Consume 'template' keyword
+                        debugPrint("About to parse template, current token: \(current()?.type ?? .eof)")
+                        let template = try parseTemplate(from: declarationStart)
+                        declarationParsed = true
+                        members.append(outlineNode(for: template, from: declarationStart))
+                        try register(
+                            template, in: &templates, overloads: &templateOverloads,
+                            nameRange: declarationNameRange)
+
+                    case .keyword("query"):
+                        advance()  // Consume 'query' keyword
+                        let query = try parseQuery(from: declarationStart)
+                        declarationParsed = true
+                        members.append(outlineNode(for: query, from: declarationStart))
+                        try register(
+                            query, in: &queries, overloads: &queryOverloads,
+                            nameRange: declarationNameRange)
+
+                    case .keyword("macro"):
+                        advance()  // Consume 'macro' keyword
+                        let macro = try parseMacro(from: declarationStart)
+                        declarationParsed = true
+                        members.append(outlineNode(for: macro, from: declarationStart))
+                        if macros[macro.name] != nil {
+                            throw error(
+                                "Duplicate macro: \(macro.name)", code: .duplicateDeclaration,
+                                range: declarationNameRange)
+                        }
+                        macros[macro.name] = macro
+
+                    case .keyword("import"):
+                        advance()  // Consume 'import' keyword
+                        let nameStart = position
+                        let importModule = try parseImport()
+                        imports.append(importModule)
+                        members.append(
+                            outlineNode(
+                                .importDeclaration, name: importModule, from: declarationStart,
+                                nameStart: nameStart))
+
+                    case .keyword("extends"):
+                        advance()  // Consume 'extends' keyword
+                        let nameStart = position
+                        extendsModule = try parseExtends()
+                        members.append(
+                            outlineNode(
+                                .extendsDeclaration, name: extendsModule ?? "", from: declarationStart,
+                                nameStart: nameStart))
+
+                    case .keyword(MTLGenerationKeywords.merge):
+                        advance()  // Consume 'merge' keyword
+                        if mergeConfiguration != nil { throw error("Duplicate merge declaration", code: .duplicateDeclaration) }
+                        mergeConfiguration = try parseMergeDeclaration()
+
+                    case .keyword(MTLGenerationKeywords.layout):
+                        advance()  // Consume 'layout' keyword
+                        if layoutConfiguration != nil { throw error("Duplicate layout declaration", code: .duplicateDeclaration) }
+                        layoutConfiguration = try parseLayoutDeclaration()
+
+                    case .comment:
+                        // Skip comments
+                        advance()
+                        try expect(.rightBracket)
+
+                    default:
+                        throw error("Unexpected keyword in module scope: \(next.type)")
+                    }
+
+                case .commentDirective(let text):
+                    advance()
+                    if let declared = declaredEncoding(in: text) {
+                        encoding = declared
+                    }
+
+                case .documentation(let text):
+                    advance()
+                    pendingDocumentation = text
+
+                case .text:
+                    // Skip top-level text (whitespace, etc.)
+                    advance()
 
                 default:
-                    throw error("Unexpected keyword in module scope: \(next.type)")
+                    throw error("Unexpected token in module scope: \(token.type)")
                 }
-
-            case .commentDirective(let text):
-                advance()
-                if let declared = declaredEncoding(in: text) {
-                    encoding = declared
-                }
-
-            case .documentation(let text):
-                advance()
-                pendingDocumentation = text
-
-            case .text:
-                // Skip top-level text (whitespace, etc.)
-                advance()
-
-            default:
-                throw error("Unexpected token in module scope: \(token.type)")
+            } catch let failure as MTLParseError where recovering {
+                recordFailure(failure)
+                pendingDocumentation = nil
+                if !declarationParsed { skipDeclaration(from: declarationStart) }
             }
+        }
+
+        guard let header else {
+            outline = members
+            return nil
         }
 
         // Build module
         // Note: the metamodel URIs are bound to registered packages when models are loaded
+        let significant = tokens.filter { $0.type != .eof }
+        let moduleRange = significant.first.map { first in
+            lineTable.range(fromUTF8Offset: first.offset, to: significant.last?.endOffset ?? first.endOffset)
+        }
         let module = MTLModule(
             name: header.name,
             metamodels: [:],  // Empty - will be populated when models are loaded
@@ -845,8 +1208,20 @@ private actor MTLSyntaxParser {
             templateOverloads: templateOverloads,
             queryOverloads: queryOverloads,
             mergeConfiguration: mergeConfiguration,
-            layoutConfiguration: layoutConfiguration
+            layoutConfiguration: layoutConfiguration,
+            origin: SourceOrigin(moduleRange)
         )
+
+        if let moduleRange {
+            outline = [
+                OutlineNode(
+                    id: "\(MTLOutlineKind.module.rawValue):\(header.name)",
+                    kind: MTLOutlineKind.module.rawValue, name: header.name,
+                    detail: header.metamodelURIs.joined(separator: ", "),
+                    range: moduleRange, selectionRange: header.nameRange ?? moduleRange,
+                    children: members)
+            ]
+        }
 
         debugPrint("Module parsing complete: \(templates.count) templates, \(queries.count) queries, \(macros.count) macros")
 
@@ -857,7 +1232,7 @@ private actor MTLSyntaxParser {
 
     /// Parses a template declaration.
     /// Note: '[template' has already been consumed
-    private func parseTemplate() throws -> MTLTemplate {
+    private func parseTemplate(from start: Int) throws -> MTLTemplate {
         debugPrint("Parsing template")
 
         let documentation = pendingDocumentation
@@ -869,17 +1244,16 @@ private actor MTLSyntaxParser {
         // Parse the guard, post, and overrides clauses, which may come in any order
         let clauses = try parseTemplateClauses()
 
+        let nameRange = declarationNameRange
+
         // Expect ]
         try expect(.rightBracket)
 
         // Parse body
         let body = try parseTemplateBody()
 
-        // Expect [/template]
-        try expect(.leftBracket)
-        try expect(.slash)
-        try expectKeyword("template")
-        try expect(.rightBracket)
+        try expectClosingTag("template")
+        declarationNameRange = nameRange
 
         let markedMain = documentation?.contains(MTLSyntax.mainAnnotation) == true
             || body.statements.contains { ($0 as? MTLComment)?.value == MTLSyntax.mainAnnotation }
@@ -893,7 +1267,8 @@ private actor MTLSyntaxParser {
             body: body,
             isMain: markedMain,
             overrides: clauses.overrides,
-            documentation: documentation
+            documentation: documentation,
+            origin: origin(from: start)
         )
     }
 
@@ -910,6 +1285,7 @@ private actor MTLSyntaxParser {
 
         // Parse name (allow keywords as names in this context)
         let name: String
+        declarationNameRange = current().map(tokenRange)
         switch current()?.type {
         case .identifier(let id):
             name = id
@@ -934,6 +1310,10 @@ private actor MTLSyntaxParser {
             guard let token = current() else {
                 throw error("Unexpected end of file in template body")
             }
+            if recovering, token.type == .eof {
+                recordFailure(error("Unexpected end of file in template body"))
+                break
+            }
 
             // Check for closing tag
             if case .leftBracket = token.type {
@@ -944,11 +1324,12 @@ private actor MTLSyntaxParser {
             }
 
             // Parse statement
-            let statement = try parseStatement()
-            statements.append(statement)
+            if let statement = try parseStatementRecovering() {
+                statements.append(statement)
+            }
         }
 
-        return MTLBlock(statements: statements, inlined: true)
+        return MTLBlock(statements: statements, inlined: true, origin: origin(of: statements))
     }
 
     // MARK: - Statement Parsing
@@ -959,18 +1340,19 @@ private actor MTLSyntaxParser {
             throw error("Unexpected end of file")
         }
 
+        let start = position
         switch token.type {
         case .text(let textContent):
             advance()
-            return MTLTextStatement(value: textContent)
+            return MTLTextStatement(value: textContent, origin: origin(from: start))
 
         case .leftBracket:
             advance()
-            return try parseDirectiveStatement()
+            return try parseDirectiveStatement(from: start)
 
         case .commentDirective(let text), .documentation(let text):
             advance()
-            return MTLComment(value: text)
+            return MTLComment(value: text, origin: origin(from: start))
 
         default:
             throw error("Unexpected token in statement: \(token.type)")
@@ -978,7 +1360,7 @@ private actor MTLSyntaxParser {
     }
 
     /// Parses a directive statement (inside [...])
-    private func parseDirectiveStatement() throws -> any MTLStatement {
+    private func parseDirectiveStatement(from start: Int) throws -> any MTLStatement {
         guard let token = current() else {
             throw error("Unexpected end of directive")
         }
@@ -988,38 +1370,38 @@ private actor MTLSyntaxParser {
             // Comment: [-- text]
             advance()
             try expect(.rightBracket)
-            return MTLComment(value: text)
+            return MTLComment(value: text, origin: origin(from: start))
 
         case .keyword(let keyword):
             // Check if this is a statement keyword
             switch keyword {
             case "if" where !isConditionalExpressionAhead():
                 advance()  // Consume the keyword
-                return try parseIfStatement()
+                return try parseIfStatement(from: start)
             case "for":
                 advance()  // Consume the keyword
-                return try parseForStatement()
+                return try parseForStatement(from: start)
             case "let" where !isLetExpressionAhead():
                 advance()  // Consume the keyword
-                return try parseLetStatement()
+                return try parseLetStatement(from: start)
             case "file":
                 advance()  // Consume the keyword
-                return try parseFileStatement()
+                return try parseFileStatement(from: start)
             case "protected":
                 advance()  // Consume the keyword
-                return try parseProtectedArea()
+                return try parseProtectedArea(from: start)
             case MTLGenerationKeywords.collect:
                 advance()  // Consume the keyword
-                return try parseCollectStatement()
+                return try parseCollectStatement(from: start)
             case MTLGenerationKeywords.emit:
                 advance()  // Consume the keyword
-                return try parseEmitStatement()
+                return try parseEmitStatement(from: start)
             default:
-                if let invocation = try parseMacroInvocationWithBody() {
+                if let invocation = try parseMacroInvocationWithBody(from: start) {
                     return invocation
                 }
                 // Not a statement keyword, treat as expression
-                return try parseExpressionStatementBody()
+                return try parseExpressionStatementBody(from: start)
             }
 
         case .slash:
@@ -1027,19 +1409,21 @@ private actor MTLSyntaxParser {
             advance()
             let expr = try parseExpression()
             try expect(.rightBracket)
-            return MTLExpressionStatement(expression: expr, followedByLineBreak: nextTextStartsWithLineBreak())
+            return MTLExpressionStatement(
+                expression: expr, followedByLineBreak: nextTextStartsWithLineBreak(),
+                origin: origin(from: start))
 
         default:
-            if let invocation = try parseMacroInvocationWithBody() {
+            if let invocation = try parseMacroInvocationWithBody(from: start) {
                 return invocation
             }
             // Expression statement: [expr/] or [expr]
-            return try parseExpressionStatementBody()
+            return try parseExpressionStatementBody(from: start)
         }
     }
 
     /// Parses an expression followed by an optional '/' and the closing bracket.
-    private func parseExpressionStatementBody() throws -> MTLExpressionStatement {
+    private func parseExpressionStatementBody(from start: Int) throws -> MTLExpressionStatement {
         let expr = try parseExpression()
 
         // Check for / before ]
@@ -1048,7 +1432,9 @@ private actor MTLSyntaxParser {
         }
 
         try expect(.rightBracket)
-        return MTLExpressionStatement(expression: expr, followedByLineBreak: nextTextStartsWithLineBreak())
+        return MTLExpressionStatement(
+            expression: expr, followedByLineBreak: nextTextStartsWithLineBreak(),
+            origin: origin(from: start))
     }
 
     /// Whether the next token is text that begins with a line break.
@@ -1075,7 +1461,7 @@ private actor MTLSyntaxParser {
     // MARK: - Control Flow Statements
 
     /// Parses an if statement: [if (condition)]...[elseif (cond)]...[else]...[/if]
-    private func parseIfStatement() throws -> MTLIfStatement {
+    private func parseIfStatement(from start: Int) throws -> MTLIfStatement {
         // Already consumed 'if' keyword
         debugPrint("Parsing if statement")
 
@@ -1122,7 +1508,8 @@ private actor MTLSyntaxParser {
             condition: condition,
             thenBlock: thenBlock,
             elseIfBlocks: elseIfBlocks,
-            elseBlock: elseBlock
+            elseBlock: elseBlock,
+            origin: origin(from: start)
         )
     }
 
@@ -1130,7 +1517,7 @@ private actor MTLSyntaxParser {
     ///
     /// The binding may use `|` or `in` after the optional type, or be omitted
     /// altogether (`[for (collection)]`), in which case the iterator is `self`.
-    private func parseForStatement() throws -> MTLForStatement {
+    private func parseForStatement(from start: Int) throws -> MTLForStatement {
         // Already consumed 'for' keyword
         debugPrint("Parsing for statement")
 
@@ -1203,11 +1590,13 @@ private actor MTLSyntaxParser {
 
         let binding = MTLBinding(variable: variable, initExpression: collectionExpr)
 
-        return MTLForStatement(binding: binding, separator: separator, before: before, after: after, body: body)
+        return MTLForStatement(
+            binding: binding, separator: separator, before: before, after: after, body: body,
+            origin: origin(from: start))
     }
 
     /// Parses a let statement: [let var : Type = expr]...[/let]
-    private func parseLetStatement() throws -> MTLLetStatement {
+    private func parseLetStatement(from start: Int) throws -> MTLLetStatement {
         // Already consumed 'let' keyword
         debugPrint("Parsing let statement")
 
@@ -1270,7 +1659,7 @@ private actor MTLSyntaxParser {
         try expectKeyword("let")
         try expect(.rightBracket)
 
-        return MTLLetStatement(variables: variables, body: body)
+        return MTLLetStatement(variables: variables, body: body, origin: origin(from: start))
     }
 
     /// Parses a block of statements until one of the specified terminating keywords is encountered.
@@ -1289,7 +1678,7 @@ private actor MTLSyntaxParser {
                             if terminators.contains(closingTag) {
                                 // Found closing tag terminator
                                 advance()  // Consume '['
-                                return MTLBlock(statements: statements, inlined: true)
+                                return MTLBlock(statements: statements, inlined: true, origin: origin(of: statements))
                             }
                         }
                     }
@@ -1298,15 +1687,16 @@ private actor MTLSyntaxParser {
                         if terminators.contains(keyword) {
                             // Found keyword terminator
                             advance()  // Consume '['
-                            return MTLBlock(statements: statements, inlined: true)
+                            return MTLBlock(statements: statements, inlined: true, origin: origin(of: statements))
                         }
                     }
                 }
             }
 
             // Parse statement
-            let statement = try parseStatement()
-            statements.append(statement)
+            if let statement = try parseStatementRecovering() {
+                statements.append(statement)
+            }
         }
 
         throw error("Unexpected end of file while parsing block (expected one of: \(terminators.joined(separator: ", ")))")
@@ -1315,7 +1705,7 @@ private actor MTLSyntaxParser {
     // MARK: - Advanced Feature Parsing
 
     /// Parses a file statement: [file (url, mode, charset)]...[/file]
-    private func parseFileStatement() throws -> MTLFileStatement {
+    private func parseFileStatement(from start: Int) throws -> MTLFileStatement {
         // Already consumed 'file' keyword
         debugPrint("Parsing file statement")
 
@@ -1364,7 +1754,7 @@ private actor MTLSyntaxParser {
 
         return MTLFileStatement(
             url: urlExpr, mode: mode, modeExpression: modeExpression, charset: charset,
-            options: options, body: body)
+            options: options, body: body, origin: origin(from: start))
     }
 
     /// Applies one `key=value` option of a `file` block.
@@ -1398,7 +1788,7 @@ private actor MTLSyntaxParser {
     }
 
     /// Parses a protected area: [protected (id, startPrefix, endPrefix)]...[/protected]
-    private func parseProtectedArea() throws -> MTLProtectedArea {
+    private func parseProtectedArea(from start: Int) throws -> MTLProtectedArea {
         // Already consumed 'protected' keyword
         debugPrint("Parsing protected area")
 
@@ -1437,11 +1827,13 @@ private actor MTLSyntaxParser {
         try expectKeyword("protected")
         try expect(.rightBracket)
 
-        return MTLProtectedArea(id: idExpr, startTagPrefix: startTagPrefix, endTagPrefix: endTagPrefix, body: body)
+        return MTLProtectedArea(
+            id: idExpr, startTagPrefix: startTagPrefix, endTagPrefix: endTagPrefix, body: body,
+            origin: origin(from: start))
     }
 
     /// Parses a query: [query name(params) : ReturnType = expr/]
-    private func parseQuery() throws -> MTLQuery {
+    private func parseQuery(from start: Int) throws -> MTLQuery {
         // Already consumed 'query' keyword
         debugPrint("Parsing query")
 
@@ -1459,6 +1851,7 @@ private actor MTLSyntaxParser {
 
         // Parse query name
         let name: String
+        declarationNameRange = current().map(tokenRange)
         switch current()?.type {
         case .identifier(let id):
             name = id
@@ -1492,12 +1885,13 @@ private actor MTLSyntaxParser {
             parameters: parameters,
             returnType: returnType,
             body: bodyExpr,
-            documentation: documentation
+            documentation: documentation,
+            origin: origin(from: start)
         )
     }
 
     /// Parses a macro: [macro name(params, bodyParam : Body)]...[/macro]
-    private func parseMacro() throws -> MTLMacro {
+    private func parseMacro(from start: Int) throws -> MTLMacro {
         // Already consumed 'macro' keyword
         debugPrint("Parsing macro")
 
@@ -1506,6 +1900,7 @@ private actor MTLSyntaxParser {
 
         // Parse macro name (skip visibility - macros don't have visibility)
         let name: String
+        declarationNameRange = current().map(tokenRange)
         switch current()?.type {
         case .identifier(let id):
             name = id
@@ -1521,6 +1916,7 @@ private actor MTLSyntaxParser {
         let bodyParameter = allParameters.first { $0.type == MTLSyntax.macroBodyType }?.name
         let parameters = allParameters.filter { $0.type != MTLSyntax.macroBodyType }
 
+        let nameRange = declarationNameRange
         try expect(.rightBracket)
 
         // Parse body
@@ -1530,13 +1926,15 @@ private actor MTLSyntaxParser {
         try expect(.slash)
         try expectKeyword("macro")
         try expect(.rightBracket)
+        declarationNameRange = nameRange
 
         return MTLMacro(
             name: name,
             parameters: parameters,
             bodyParameter: bodyParameter,
             body: body,
-            documentation: documentation
+            documentation: documentation,
+            origin: origin(from: start)
         )
     }
 
@@ -1599,8 +1997,26 @@ private actor MTLSyntaxParser {
         advance()
     }
 
-    private func error(_ message: String, token: MTLToken? = nil) -> MTLParseError {
+    /// Builds the error for a problem at a token, remembering it for recovery.
+    ///
+    /// - Parameters:
+    ///   - message: What is wrong.
+    ///   - token: The token at which the problem is reported (default: the current token).
+    ///   - code: The kind of problem (default: an unexpected token, or an unexpected end at the
+    ///     end of the file).
+    ///   - range: The range to report in the diagnostic (default: the range of the token).
+    /// - Returns: The error to throw.
+    fileprivate func error(
+        _ message: String, token: MTLToken? = nil, code: MTLDiagnosticCode = .unexpectedToken,
+        range: SourceRange? = nil
+    ) -> MTLParseError {
         let errorToken = token ?? current()
+        let atEnd = errorToken == nil || errorToken?.type == .eof
+        let reported = range ?? (errorToken ?? tokens.last).map(tokenRange)
+            ?? SourceRange(start: .start, end: .start)
+        lastFailure = MTLFailure(
+            code: atEnd && code == .unexpectedToken ? .unexpectedEnd : code, message: message,
+            range: reported)
         if let t = errorToken {
             return parseError(message, line: t.line, column: t.column)
         } else {
@@ -1612,6 +2028,307 @@ private actor MTLSyntaxParser {
         if enableDebugging {
             print("[MTLSyntaxParser] \(message)")
         }
+    }
+}
+
+// MARK: - Syntax Parser: Positions and Recovery
+
+/// A problem that a parse method reported by throwing, with where it is and what kind it is.
+fileprivate struct MTLFailure {
+    /// The kind of problem.
+    let code: MTLDiagnosticCode
+
+    /// What is wrong.
+    let message: String
+
+    /// Where the problem is.
+    let range: SourceRange
+}
+
+/// The parts of a module header.
+fileprivate struct ModuleHeader {
+    /// The module name.
+    let name: String
+
+    /// The URIs of the metamodels.
+    let metamodelURIs: [String]
+
+    /// The name of the extended module, if any.
+    let extends: String?
+
+    /// Where the module name is written.
+    let nameRange: SourceRange?
+}
+
+extension MTLSyntaxParser {
+
+    /// The range of a token.
+    fileprivate func tokenRange(_ token: MTLToken) -> SourceRange {
+        lineTable.range(fromUTF8Offset: token.offset, to: token.endOffset)
+    }
+
+    /// The range from the token at an index to the last token read.
+    ///
+    /// - Parameter start: The index of the first token.
+    /// - Returns: The range, or `nil` if no token has been read since the start.
+    fileprivate func range(fromToken start: Int) -> SourceRange? {
+        guard start >= 0, start < tokens.count, position > start, position - 1 < tokens.count else {
+            return nil
+        }
+        return lineTable.range(fromUTF8Offset: tokens[start].offset, to: tokens[position - 1].endOffset)
+    }
+
+    /// The origin of the text from the token at an index to the last token read.
+    fileprivate func origin(from start: Int) -> SourceOrigin {
+        SourceOrigin(range(fromToken: start))
+    }
+
+    /// The origin that covers a list of statements.
+    fileprivate func origin(of statements: [any MTLStatement]) -> SourceOrigin {
+        SourceOrigin(SourceRange.union(of: statements.compactMap { $0.origin.range }))
+    }
+
+    /// The token that starts at an offset.
+    fileprivate func token(atOffset offset: Int) -> MTLToken? {
+        tokens.first { $0.offset == offset }
+    }
+
+    /// Remembers a problem for the diagnostics, unless the same problem is already known.
+    ///
+    /// - Parameter error: The error that was thrown.
+    fileprivate func recordFailure(_ error: MTLParseError) {
+        let failure = lastFailure ?? MTLFailure(
+            code: .unexpectedToken, message: "\(error)",
+            range: (current() ?? tokens.last).map(tokenRange) ?? SourceRange(start: .start, end: .start))
+        let known = diagnostics.contains {
+            $0.code == failure.code.rawValue
+                && $0.range?.start.utf8Offset == failure.range.start.utf8Offset
+        }
+        if !known {
+            diagnostics.append(
+                SourceDiagnostic(
+                    severity: .error, code: failure.code.rawValue, message: failure.message,
+                    range: failure.range))
+        }
+    }
+
+    // MARK: Skipping
+
+    /// Skips the rest of the directive that started at a token.
+    ///
+    /// Reading resumes after the next `]`, or before the next `[` if that comes first.
+    ///
+    /// - Parameter start: The index of the token at which the directive started.
+    fileprivate func skipDirective(from start: Int) {
+        var index = max(position, start + 1)
+        while index < tokens.count {
+            switch tokens[index].type {
+            case .rightBracket:
+                position = index + 1
+                return
+            case .leftBracket, .eof:
+                position = index
+                return
+            default:
+                index += 1
+            }
+        }
+        position = tokens.count
+    }
+
+    /// Skips what remains of a template, macro, or other declaration that cannot be parsed.
+    ///
+    /// Templates and macros are skipped up to their closing tag; other declarations up to the
+    /// end of their directive.
+    ///
+    /// - Parameter start: The index of the `[` at which the declaration started.
+    fileprivate func skipDeclaration(from start: Int) {
+        defer { position = max(position, min(start + 1, tokens.count)) }
+        if start + 1 < tokens.count, tokens[start].type == .leftBracket,
+            case .keyword(let word) = tokens[start + 1].type,
+            word == "template" || word == "macro",
+            let end = closingTagEnd(named: word, from: max(position, start + 1))
+        {
+            position = end
+            return
+        }
+        skipDirective(from: start)
+    }
+
+    /// Skips what remains of a statement that cannot be parsed.
+    ///
+    /// Statements that open a block are skipped up to their matching closing tag; other
+    /// statements up to the end of their directive.
+    ///
+    /// - Parameter start: The index of the token at which the statement started.
+    fileprivate func skipStatement(from start: Int) {
+        defer { position = max(position, min(start + 1, tokens.count)) }
+        if start + 1 < tokens.count, tokens[start].type == .leftBracket,
+            case .keyword(let word) = tokens[start + 1].type,
+            MTLSyntax.blockKeywords.contains(word), isBlockOpener(at: start, named: word),
+            let end = closingTagEnd(named: word, from: max(position, start + 1))
+        {
+            position = end
+            return
+        }
+        skipDirective(from: start)
+    }
+
+    /// Whether the directive at an index opens a block of the given kind.
+    ///
+    /// A directive closed by `/]`, and a conditional or let expression, do not open a block.
+    ///
+    /// - Parameters:
+    ///   - index: The index of the `[` of the directive.
+    ///   - word: The keyword after the bracket.
+    fileprivate func isBlockOpener(at index: Int, named word: String) -> Bool {
+        var depth = 0
+        var cursor = index + 2
+        while cursor < tokens.count {
+            switch tokens[cursor].type {
+            case .leftParen: depth += 1
+            case .rightParen: depth -= 1
+            case .keyword("then") where depth == 0 && word == "if": return false
+            case .keyword("in") where depth == 0 && word == "let": return false
+            case .rightBracket: return tokens[cursor - 1].type != .slash
+            case .leftBracket, .eof: return false
+            default: break
+            }
+            cursor += 1
+        }
+        return false
+    }
+
+    /// The index after the closing tag `[/name]` that matches the open construct.
+    ///
+    /// Nested openers of the same name are skipped.
+    ///
+    /// - Parameters:
+    ///   - name: The keyword of the construct.
+    ///   - from: The index from which to look.
+    /// - Returns: The index after the closing tag, or `nil` if there is none.
+    fileprivate func closingTagEnd(named name: String, from: Int) -> Int? {
+        var depth = 0
+        var index = from
+        while index + 1 < tokens.count {
+            if tokens[index].type == .leftBracket {
+                if tokens[index + 1].type == .slash {
+                    if index + 3 < tokens.count, closingTagName(tokens[index + 2]) == name,
+                        tokens[index + 3].type == .rightBracket
+                    {
+                        if depth == 0 { return index + 4 }
+                        depth -= 1
+                    }
+                } else if case .keyword(name) = tokens[index + 1].type,
+                    isBlockOpener(at: index, named: name)
+                {
+                    depth += 1
+                }
+            }
+            index += 1
+        }
+        return nil
+    }
+
+    /// Parses a statement, skipping it and noting the problem when recovering.
+    ///
+    /// - Returns: The statement, or `nil` if it was skipped.
+    /// - Throws: ``MTLParseError`` unless recovering.
+    fileprivate func parseStatementRecovering() throws -> (any MTLStatement)? {
+        let start = position
+        guard recovering else { return try parseStatement() }
+        do {
+            return try parseStatement()
+        } catch let failure as MTLParseError {
+            recordFailure(failure)
+            skipStatement(from: start)
+            return nil
+        }
+    }
+
+    /// Consumes the closing tag of a template or macro, noting the problem when recovering.
+    ///
+    /// - Parameter name: The keyword of the construct.
+    /// - Throws: ``MTLParseError`` unless recovering.
+    fileprivate func expectClosingTag(_ name: String) throws {
+        let start = position
+        do {
+            try expect(.leftBracket)
+            try expect(.slash)
+            try expectKeyword(name)
+            try expect(.rightBracket)
+        } catch let failure as MTLParseError where recovering {
+            recordFailure(failure)
+            position = closingTagEnd(named: name, from: position) ?? max(position, start)
+        }
+    }
+
+    // MARK: Outline
+
+    /// The outline node for a template.
+    fileprivate func outlineNode(for template: MTLTemplate, from start: Int) -> OutlineNode {
+        let main = template.isMain ? " \(MTLOutlineSyntax.mainMarker)" : ""
+        let detail = "\(template.visibility.rawValue)\(main)(\(MTLOutlineSyntax.parameters(template.parameters)))"
+        return outlineNode(
+            .template, name: template.name, detail: detail, from: start,
+            discriminator: template.parameters.map(\.type).joined(separator: ","))
+    }
+
+    /// The outline node for a query.
+    fileprivate func outlineNode(for query: MTLQuery, from start: Int) -> OutlineNode {
+        let detail = "\(query.visibility.rawValue)(\(MTLOutlineSyntax.parameters(query.parameters))) : \(query.returnType)"
+        return outlineNode(
+            .query, name: query.name, detail: detail, from: start,
+            discriminator: query.parameters.map(\.type).joined(separator: ","))
+    }
+
+    /// The outline node for a macro.
+    fileprivate func outlineNode(for macro: MTLMacro, from start: Int) -> OutlineNode {
+        outlineNode(
+            .macro, name: macro.name, detail: "(\(MTLOutlineSyntax.parameters(macro.parameters)))",
+            from: start, discriminator: macro.parameters.map(\.type).joined(separator: ","))
+    }
+
+    /// The outline node for an `import` or `extends` declaration.
+    ///
+    /// - Parameters:
+    ///   - kind: The kind of declaration.
+    ///   - name: The name of the module.
+    ///   - start: The index of the `[` of the declaration.
+    ///   - nameStart: The index of the first token of the module name.
+    fileprivate func outlineNode(
+        _ kind: MTLOutlineKind, name: String, from start: Int, nameStart: Int
+    ) -> OutlineNode {
+        let whole = range(fromToken: start) ?? SourceRange(start: .start, end: .start)
+        var last = position - 1
+        while last > nameStart, tokens[last].type == .rightBracket || tokens[last].type == .slash {
+            last -= 1
+        }
+        let selection = last >= nameStart && nameStart < tokens.count
+            ? lineTable.range(fromUTF8Offset: tokens[nameStart].offset, to: tokens[last].endOffset)
+            : whole
+        return OutlineNode(
+            id: uniqueOutlineID("\(kind.rawValue):\(name)", at: whole.start.utf8Offset),
+            kind: kind.rawValue, name: name, range: whole, selectionRange: selection)
+    }
+
+    /// The outline node for a template, query, or macro.
+    private func outlineNode(
+        _ kind: MTLOutlineKind, name: String, detail: String, from start: Int, discriminator: String
+    ) -> OutlineNode {
+        let whole = range(fromToken: start) ?? SourceRange(start: .start, end: .start)
+        return OutlineNode(
+            id: uniqueOutlineID("\(kind.rawValue):\(name)(\(discriminator))", at: whole.start.utf8Offset),
+            kind: kind.rawValue, name: name, detail: detail, range: whole,
+            selectionRange: declarationNameRange ?? whole)
+    }
+
+    /// An identifier that no other outline node uses.
+    private func uniqueOutlineID(_ base: String, at offset: Int) -> String {
+        if outlineIdentifiers.insert(base).inserted { return base }
+        let unique = "\(base)@\(offset)"
+        outlineIdentifiers.insert(unique)
+        return unique
     }
 }
 
@@ -1649,16 +2366,28 @@ extension MTLLexer {
         let remaining = input[position...]
         let tokenLine = line
         let tokenColumn = column
+        let tokenOffset = offset
 
         if remaining.hasPrefix(Self.documentationOpen) {
             let body = remaining.dropFirst(Self.documentationOpen.count)
             guard let end = body.range(of: Self.documentationClose) else {
-                throw parseError("Unterminated documentation comment", line: tokenLine, column: tokenColumn)
+                guard recovering else {
+                    throw parseError("Unterminated documentation comment", line: tokenLine, column: tokenColumn)
+                }
+                flushPendingText(&tokens)
+                let start = mark()
+                consume(remaining.count)
+                report(.unterminatedComment, "Unterminated documentation comment", from: start)
+                tokens.append(
+                    MTLToken(
+                        type: .documentation(String(body)), line: tokenLine, column: tokenColumn,
+                        offset: tokenOffset, endOffset: MTLToken.pendingEnd))
+                return true
             }
             let text = String(body[..<end.lowerBound])
             flushPendingText(&tokens)
             consume(Self.documentationOpen.count + text.count + Self.documentationClose.count)
-            tokens.append(MTLToken(type: .documentation(text), line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .documentation(text), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             return true
         }
 
@@ -1672,32 +2401,59 @@ extension MTLLexer {
         if trimmed.first == "]" {
             let body = trimmed.dropFirst()
             guard let end = body.range(of: Self.blockCommentClose) else {
-                throw parseError("Unterminated comment block", line: tokenLine, column: tokenColumn)
+                guard recovering else {
+                    throw parseError("Unterminated comment block", line: tokenLine, column: tokenColumn)
+                }
+                flushPendingText(&tokens)
+                let start = mark()
+                consume(remaining.count)
+                report(.unterminatedComment, "Unterminated comment block", from: start)
+                tokens.append(
+                    MTLToken(
+                        type: .commentDirective(String(body)), line: tokenLine, column: tokenColumn,
+                        offset: tokenOffset, endOffset: MTLToken.pendingEnd))
+                return true
             }
             let text = String(body[..<end.lowerBound])
             flushPendingText(&tokens)
             consume(remaining.distance(from: remaining.startIndex, to: end.upperBound))
-            tokens.append(MTLToken(type: .commentDirective(text), line: tokenLine, column: tokenColumn))
+            tokens.append(MTLToken(type: .commentDirective(text), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             return true
         }
 
         guard let end = afterKeyword.range(of: Self.lineCommentClose) else {
-            throw parseError("Comment must be terminated by '/]'", line: tokenLine, column: tokenColumn)
+            guard recovering else {
+                throw parseError("Comment must be terminated by '/]'", line: tokenLine, column: tokenColumn)
+            }
+            flushPendingText(&tokens)
+            let start = mark()
+            consume(remaining.count)
+            report(.unterminatedComment, "Comment must be terminated by '/]'", from: start)
+            tokens.append(
+                MTLToken(
+                    type: .commentDirective(String(afterKeyword)), line: tokenLine, column: tokenColumn,
+                    offset: tokenOffset, endOffset: MTLToken.pendingEnd))
+            return true
         }
         let text = String(afterKeyword[..<end.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
         flushPendingText(&tokens)
         consume(remaining.distance(from: remaining.startIndex, to: end.upperBound))
-        tokens.append(MTLToken(type: .commentDirective(text), line: tokenLine, column: tokenColumn))
+        tokens.append(MTLToken(type: .commentDirective(text), line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
         return true
     }
 
     /// Emits any text accumulated in text mode as a text token.
     ///
     /// - Parameter tokens: The token list that receives the text token.
-    private func flushPendingText(_ tokens: inout [MTLToken]) {
+    fileprivate func flushPendingText(_ tokens: inout [MTLToken]) {
         guard !textBuffer.isEmpty else { return }
-        tokens.append(MTLToken(type: .text(textBuffer), line: line, column: column - textBuffer.count))
+        let start = textStart ?? mark()
+        tokens.append(
+            MTLToken(
+                type: .text(textBuffer), line: start.line, column: start.column, offset: start.offset,
+                endOffset: offset))
         textBuffer = ""
+        textStart = nil
     }
 
     /// Advances over the given number of characters, tracking line and column.
@@ -1780,11 +2536,13 @@ extension MTLSyntaxParser {
     ///
     /// - Returns: The module name, the metamodel URIs, and the name of the extended module, if any.
     /// - Throws: `MTLParseError` if the header is malformed.
-    fileprivate func parseModuleHeader() throws -> (name: String, metamodelURIs: [String], extends: String?) {
+    fileprivate func parseModuleHeader() throws -> ModuleHeader {
         try expect(.leftBracket)
         try expectKeyword("module")
 
+        let nameStart = position
         let name = try parseQualifiedName(describing: "module name")
+        let nameRange = range(fromToken: nameStart)
 
         try expect(.leftParen)
         var uris: [String] = []
@@ -1806,7 +2564,7 @@ extension MTLSyntaxParser {
         }
 
         try finishDeclaration()
-        return (name, uris, parent)
+        return ModuleHeader(name: name, metamodelURIs: uris, extends: parent, nameRange: nameRange)
     }
 
     /// Consumes the optional `/` and the closing bracket of a one-line declaration.
@@ -1872,14 +2630,14 @@ extension MTLSyntaxParser {
         clauses: while true {
             switch current()?.type {
             case .questionMark, .keyword("guard"):
-                guard guardCondition == nil else { throw error("Duplicate guard in template header") }
+                guard guardCondition == nil else { throw error("Duplicate guard in template header", code: .duplicateDeclaration) }
                 advance()
                 try expect(.leftParen)
                 guardCondition = try parseExpression()
                 try expect(.rightParen)
 
             case .keyword("post"):
-                guard post == nil else { throw error("Duplicate post in template header") }
+                guard post == nil else { throw error("Duplicate post in template header", code: .duplicateDeclaration) }
                 advance()
                 try expect(.leftParen)
                 implicitReceiverDepth += 1
@@ -1888,7 +2646,7 @@ extension MTLSyntaxParser {
                 try expect(.rightParen)
 
             case .keyword("overrides"):
-                guard overrides == nil else { throw error("Duplicate overrides in template header") }
+                guard overrides == nil else { throw error("Duplicate overrides in template header", code: .duplicateDeclaration) }
                 advance()
                 overrides = try parseQualifiedName(describing: "name of the overridden template")
 
@@ -1905,7 +2663,8 @@ extension MTLSyntaxParser {
     fileprivate func register(
         _ template: MTLTemplate,
         in templates: inout OrderedDictionary<String, MTLTemplate>,
-        overloads: inout [MTLTemplate]
+        overloads: inout [MTLTemplate],
+        nameRange: SourceRange? = nil
     ) throws {
         guard let existing = templates[template.name] else {
             templates[template.name] = template
@@ -1914,7 +2673,7 @@ extension MTLSyntaxParser {
         let signature = template.parameters.map(\.type)
         let known = [existing] + overloads.filter { $0.name == template.name }
         if known.contains(where: { $0.parameters.map(\.type) == signature }) {
-            throw error("Duplicate template: \(template.name)")
+            throw error("Duplicate template: \(template.name)", code: .duplicateDeclaration, range: nameRange)
         }
         overloads.append(template)
     }
@@ -1925,7 +2684,8 @@ extension MTLSyntaxParser {
     fileprivate func register(
         _ query: MTLQuery,
         in queries: inout OrderedDictionary<String, MTLQuery>,
-        overloads: inout [MTLQuery]
+        overloads: inout [MTLQuery],
+        nameRange: SourceRange? = nil
     ) throws {
         guard let existing = queries[query.name] else {
             queries[query.name] = query
@@ -1934,7 +2694,7 @@ extension MTLSyntaxParser {
         let signature = query.parameters.map(\.type)
         let known = [existing] + overloads.filter { $0.name == query.name }
         if known.contains(where: { $0.parameters.map(\.type) == signature }) {
-            throw error("Duplicate query: \(query.name)")
+            throw error("Duplicate query: \(query.name)", code: .duplicateDeclaration, range: nameRange)
         }
         overloads.append(query)
     }
@@ -1961,7 +2721,14 @@ extension MTLSyntaxParser {
             return result
         } catch let syntaxError as AQLSyntaxError {
             let diagnostic = syntaxError.diagnostic
-            throw parseError(diagnostic.message, line: diagnostic.line, column: diagnostic.column)
+            let range = diagnostic.range ?? SourceRange(start: .start, end: .start)
+            let code: MTLDiagnosticCode = diagnostic.code == AQLDiagnosticCode.unexpectedEnd
+                ? .unexpectedEnd : .unexpectedToken
+            lastFailure = MTLFailure(code: code, message: diagnostic.message, range: range)
+            let located = token(atOffset: range.start.utf8Offset)
+            throw parseError(
+                diagnostic.message, line: located?.line ?? range.start.line,
+                column: located?.column ?? range.start.column)
         }
     }
 
@@ -2026,7 +2793,7 @@ extension MTLSyntaxParser {
     /// by `]` rather than `/]` and a matching `[/name]` follows.
     ///
     /// - Returns: The invocation, or `nil` (with nothing consumed) if the directive is not one.
-    fileprivate func parseMacroInvocationWithBody() throws -> MTLMacroInvocation? {
+    fileprivate func parseMacroInvocationWithBody(from start: Int) throws -> MTLMacroInvocation? {
         guard let name = closingTagName(current()), peek()?.type == .leftParen,
               let closeIndex = indexOfMatchingParenthesis(from: position + 1),
               closeIndex + 1 < tokens.count, tokens[closeIndex + 1].type == .rightBracket,
@@ -2047,7 +2814,8 @@ extension MTLSyntaxParser {
         advance()
         try expect(.rightBracket)
 
-        return MTLMacroInvocation(macroName: name, arguments: arguments, bodyContent: body)
+        return MTLMacroInvocation(
+            macroName: name, arguments: arguments, bodyContent: body, origin: origin(from: start))
     }
 
     /// The index of the parenthesis that closes the one at `start`.
@@ -2174,7 +2942,7 @@ extension MTLSyntaxParser {
 extension MTLSyntaxParser {
 
     /// Parses `[collect ('set', expression)/]`; the `collect` keyword is already consumed.
-    fileprivate func parseCollectStatement() throws -> MTLCollectStatement {
+    fileprivate func parseCollectStatement(from start: Int) throws -> MTLCollectStatement {
         try expect(.leftParen)
         let setName = try parseExpression()
         try expect(.comma)
@@ -2182,12 +2950,12 @@ extension MTLSyntaxParser {
         try expect(.rightParen)
         if current()?.type == .slash { advance() }
         try expect(.rightBracket)
-        return MTLCollectStatement(setName: setName, value: value)
+        return MTLCollectStatement(setName: setName, value: value, origin: origin(from: start))
     }
 
     /// Parses `[emit ('set') in(expr) separator(expr) once]...[/emit]`; the `emit` keyword is
     /// already consumed.
-    fileprivate func parseEmitStatement() throws -> MTLEmitStatement {
+    fileprivate func parseEmitStatement(from start: Int) throws -> MTLEmitStatement {
         try expect(.leftParen)
         let setName = try parseExpression()
         try expect(.rightParen)
@@ -2223,7 +2991,8 @@ extension MTLSyntaxParser {
 
         return MTLEmitStatement(
             setName: setName, separator: separator, order: order, rendersOnce: rendersOnce,
-            body: MTLBlock(statements: block.statements, inlined: true))
+            body: MTLBlock(statements: block.statements, inlined: true, origin: block.origin),
+            origin: origin(from: start))
     }
 
     /// Parses `[merge (start, end, generatedTag, keepTag, strategy, options...)/]`;

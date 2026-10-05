@@ -65,6 +65,8 @@ import OrderedCollections
 /// - Note: MTL modules are designed as immutable value types to enable safe concurrent
 ///   processing and template execution across multiple actors.
 public struct MTLModule: Sendable, Equatable, Hashable {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     // MARK: - Properties
 
@@ -193,6 +195,7 @@ public struct MTLModule: Sendable, Equatable, Hashable {
     ///   - extendedModule: The loaded parent module (default: nil)
     ///   - mergeConfiguration: Tagged-block merge configuration (default: nil)
     ///   - layoutConfiguration: Layout conversion (default: nil)
+    ///   - origin: Where the construct was written, if known (default: none).
     ///
     /// - Precondition: The module name must be a non-empty string
     public init(
@@ -211,8 +214,10 @@ public struct MTLModule: Sendable, Equatable, Hashable {
         importedModules: [MTLModule] = [],
         extendedModule: MTLModule? = nil,
         mergeConfiguration: MTLMergeConfiguration? = nil,
-        layoutConfiguration: MTLLayoutConfiguration? = nil
+        layoutConfiguration: MTLLayoutConfiguration? = nil,
+        origin: SourceOrigin = .init()
     ) {
+        self.origin = origin
         precondition(!name.isEmpty, "Module name must not be empty")
 
         self.name = name
@@ -311,7 +316,8 @@ public struct MTLModule: Sendable, Equatable, Hashable {
             importedModules: imports,
             extendedModule: extendedModule,
             mergeConfiguration: mergeConfiguration,
-            layoutConfiguration: layoutConfiguration
+            layoutConfiguration: layoutConfiguration,
+            origin: origin
         )
     }
 

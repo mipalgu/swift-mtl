@@ -69,7 +69,9 @@ enum MTLStandaloneLines {
             if case .text(let addition) = token.type,
                let last = merged.last,
                case .text(let existing) = last.type {
-                merged[merged.count - 1] = MTLToken(type: .text(existing + addition), line: last.line, column: last.column)
+                merged[merged.count - 1] = MTLToken(
+                    type: .text(existing + addition), line: last.line, column: last.column,
+                    offset: last.offset, endOffset: token.endOffset)
             } else {
                 merged.append(token)
             }
@@ -87,8 +89,24 @@ enum MTLStandaloneLines {
             let token = tokens[index]
             switch token.type {
             case .text(let value):
+                var line = token.line
+                var column = token.column
+                var offset = token.offset
                 for piece in lines(of: value) {
-                    atoms.append(.text(piece, token: token))
+                    let end = offset + piece.utf8.count
+                    atoms.append(
+                        .text(
+                            piece,
+                            token: MTLToken(
+                                type: .text(piece), line: line, column: column, offset: offset,
+                                endOffset: end)))
+                    offset = end
+                    if piece.last.map(isLineBreak) == true {
+                        line += 1
+                        column = 1
+                    } else {
+                        column += piece.count
+                    }
                 }
                 index += 1
             case .leftBracket:
@@ -198,7 +216,10 @@ enum MTLStandaloneLines {
             guard !pendingText.isEmpty else { return }
             let first = pendingText[0].1
             let merged = pendingText.map(\.0).joined()
-            tokens.append(MTLToken(type: .text(merged), line: first.line, column: first.column))
+            tokens.append(
+                MTLToken(
+                    type: .text(merged), line: first.line, column: first.column, offset: first.offset,
+                    endOffset: pendingText[pendingText.count - 1].1.endOffset))
             pendingText.removeAll()
         }
 

@@ -75,6 +75,8 @@ struct MTLRuntimeHandle: EcoreValue {
 /// number and dynamic types of the arguments; the receiver, if any, counts as
 /// the first argument.
 public struct MTLInvocationExpression: AQLExpression {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// The name of the template, query, macro, or library operation.
     public let name: String
@@ -97,12 +99,15 @@ public struct MTLInvocationExpression: AQLExpression {
     ///   - receiver: The receiver, if the call is written `receiver.name(...)`.
     ///   - arguments: The arguments.
     ///   - fallback: The AQL call to evaluate if no module element applies.
+    ///   - origin: Where the construct was written, if known (default: none).
     public init(
         name: String,
         receiver: (any AQLExpression)?,
         arguments: [any AQLExpression],
-        fallback: AQLCallExpression
+        fallback: AQLCallExpression,
+        origin: SourceOrigin = .init()
     ) {
+        self.origin = origin
         self.name = name
         self.receiver = receiver
         self.arguments = arguments
@@ -128,6 +133,8 @@ public struct MTLInvocationExpression: AQLExpression {
 /// Evaluating the node itself is an error.
 @available(*, deprecated, message: "Use AQLLambdaExpression")
 public struct MTLLambdaExpression: AQLExpression {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// The name of the iterator variable.
     public let iterator: String
@@ -144,7 +151,12 @@ public struct MTLLambdaExpression: AQLExpression {
     ///   - iterator: The iterator variable name.
     ///   - iteratorType: The declared iterator type, if any.
     ///   - body: The body expression.
-    public init(iterator: String, iteratorType: String? = nil, body: any AQLExpression) {
+    ///   - origin: Where the construct was written, if known (default: none).
+    public init(
+        iterator: String, iteratorType: String? = nil, body: any AQLExpression,
+        origin: SourceOrigin = .init()
+    ) {
+        self.origin = origin
         self.iterator = iterator
         self.iteratorType = iteratorType
         self.body = body
@@ -167,6 +179,8 @@ public struct MTLLambdaExpression: AQLExpression {
 /// order. Sets and ordered sets drop duplicate elements.
 @available(*, deprecated, message: "Use AQLCollectionLiteralExpression")
 public struct MTLCollectionLiteralExpression: AQLExpression {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// The collection kind written before the braces (`Sequence`, `OrderedSet`, `Set`, `Bag`).
     public let kind: String
@@ -179,7 +193,9 @@ public struct MTLCollectionLiteralExpression: AQLExpression {
     /// - Parameters:
     ///   - kind: The collection kind.
     ///   - elements: The element expressions.
-    public init(kind: String, elements: [any AQLExpression]) {
+    ///   - origin: Where the construct was written, if known (default: none).
+    public init(kind: String, elements: [any AQLExpression], origin: SourceOrigin = .init()) {
+        self.origin = origin
         self.kind = kind
         self.elements = elements
     }

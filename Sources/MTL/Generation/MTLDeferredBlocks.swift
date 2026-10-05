@@ -70,6 +70,8 @@ struct MTLDeferredState {
 ///     value: MTLExpression(AQLLiteralExpression(value: "java.util.List")))
 /// ```
 public struct MTLCollectStatement: MTLStatement {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// The expression that names the set.
     public let setName: MTLExpression
@@ -86,7 +88,12 @@ public struct MTLCollectStatement: MTLStatement {
     ///   - setName: The expression that names the set.
     ///   - value: The expression that yields the value or values to add.
     ///   - multiLines: Whether this statement spans multiple lines (default: false).
-    public init(setName: MTLExpression, value: MTLExpression, multiLines: Bool = false) {
+    ///   - origin: Where the construct was written, if known (default: none).
+    public init(
+        setName: MTLExpression, value: MTLExpression, multiLines: Bool = false,
+        origin: SourceOrigin = .init()
+    ) {
+        self.origin = origin
         self.setName = setName
         self.value = value
         self.multiLines = multiLines
@@ -134,6 +141,8 @@ public struct MTLCollectStatement: MTLStatement {
 ///     body: MTLBlock(statements: [MTLTextStatement(value: "import ")], inlined: true))
 /// ```
 public struct MTLEmitStatement: MTLStatement {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// The expression that names the set.
     public let setName: MTLExpression
@@ -162,10 +171,13 @@ public struct MTLEmitStatement: MTLStatement {
     ///   - rendersOnce: Whether to render once for the whole collection (default: `false`).
     ///   - body: The block rendered for each element.
     ///   - multiLines: Whether this statement spans multiple lines (default: true).
+    ///   - origin: Where the construct was written, if known (default: none).
     public init(
         setName: MTLExpression, separator: MTLExpression? = nil, order: MTLExpression? = nil,
-        rendersOnce: Bool = false, body: MTLBlock, multiLines: Bool = true
+        rendersOnce: Bool = false, body: MTLBlock, multiLines: Bool = true,
+        origin: SourceOrigin = .init()
     ) {
+        self.origin = origin
         self.setName = setName
         self.separator = separator
         self.order = order
@@ -190,6 +202,8 @@ public struct MTLEmitStatement: MTLStatement {
 /// an empty collection if nothing has been collected. Templates use it for
 /// checks such as short-name clashes before emitting.
 public struct MTLCollectedExpression: AQLExpression {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     /// The expression that names the set.
     public let setName: any AQLExpression
@@ -197,7 +211,8 @@ public struct MTLCollectedExpression: AQLExpression {
     /// Creates a collected expression.
     ///
     /// - Parameter setName: The expression that names the set.
-    public init(setName: any AQLExpression) {
+    public init(setName: any AQLExpression, origin: SourceOrigin = .init()) {
+        self.origin = origin
         self.setName = setName
     }
 

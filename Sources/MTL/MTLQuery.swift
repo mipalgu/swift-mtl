@@ -6,6 +6,7 @@
 //  Copyright (c) 2025 Rene Hexel. All rights reserved.
 //
 
+import EMFBase
 import Foundation
 
 // MARK: - MTL Query
@@ -70,6 +71,8 @@ import Foundation
 /// - Note: Queries are immutable value types designed for safe concurrent
 ///   access during template execution.
 public struct MTLQuery: Sendable, Equatable, Hashable {
+    /// Where the construct was written, if it was parsed from source text.
+    public let origin: SourceOrigin
 
     // MARK: - Properties
 
@@ -122,6 +125,7 @@ public struct MTLQuery: Sendable, Equatable, Hashable {
     ///   - returnType: The return type specification
     ///   - body: The expression that computes the query's result
     ///   - documentation: Optional documentation (default: nil)
+    ///   - origin: Where the construct was written, if known (default: none).
     ///
     /// - Precondition: The query name must be a non-empty string
     /// - Precondition: The return type must be a non-empty string
@@ -131,8 +135,10 @@ public struct MTLQuery: Sendable, Equatable, Hashable {
         parameters: [MTLVariable] = [],
         returnType: String,
         body: MTLExpression,
-        documentation: String? = nil
+        documentation: String? = nil,
+        origin: SourceOrigin = .init()
     ) {
+        self.origin = origin
         precondition(!name.isEmpty, "Query name must not be empty")
         precondition(!returnType.isEmpty, "Return type must not be empty")
 

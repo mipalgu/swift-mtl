@@ -7,6 +7,7 @@
 //
 
 import AQL
+import EMFBase
 import Testing
 
 @testable import MTL
@@ -28,17 +29,20 @@ struct MTLParserDelegateTests {
             (.text("t"), .other), (.commentDirective("c"), .other), (.documentation("d"), .other),
             (.whitespace, .other), (.newline, .other),
         ]
+        let table = LineTable("ab\ncdef")
+        let range = table.range(fromUTF8Offset: 4, to: 6)
         for (mtl, aql) in pairs {
-            #expect(MTLToken(type: mtl, line: 3, column: 4).aqlToken
-                == AQLToken(kind: aql, span: AQLSourceSpan(line: 3, column: 4)))
+            let token = MTLToken(type: mtl, line: 2, column: 2, offset: 4, endOffset: 6)
+            #expect(token.aqlToken(using: table) == AQLToken(kind: aql, range: range))
         }
     }
 
     @Test("Only a slash before a closing bracket ends an expression")
     func terminator() {
-        let slash = AQLToken(kind: .slash, span: AQLSourceSpan(line: 1, column: 1))
-        let bracket = AQLToken(kind: .rightBracket, span: AQLSourceSpan(line: 1, column: 2))
-        let name = AQLToken(kind: .identifier("x"), span: AQLSourceSpan(line: 1, column: 2))
+        let range = SourceRange(start: .start, end: .start)
+        let slash = AQLToken(kind: .slash, range: range)
+        let bracket = AQLToken(kind: .rightBracket, range: range)
+        let name = AQLToken(kind: .identifier("x"), range: range)
         #expect(MTLParserDelegate.endsExpression(slash, bracket))
         #expect(!MTLParserDelegate.endsExpression(slash, name))
         #expect(!MTLParserDelegate.endsExpression(slash, nil))
