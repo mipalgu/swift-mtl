@@ -648,8 +648,8 @@ binding     ::= name [':' type] '=' expr
 
 ## Differences from Acceleo and current limits
 
-swift-mtl follows the OMG MOFM2T text and the Acceleo 3 syntax. The differences
-and limits below are known.
+swift-mtl follows the OMG MOFM2T text and the Acceleo 3 syntax
+with the following differences and limits.
 
 Expression services:
 
