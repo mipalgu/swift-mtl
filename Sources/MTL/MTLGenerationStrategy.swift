@@ -392,7 +392,12 @@ public actor MTLFileSystemStrategy: MTLGenerationStrategy {
                 throw error
             }
             do {
+                #if os(WASI)
+                // WebAssembly hosts have no atomic replace, so the file is written directly.
+                try data.write(to: URL(fileURLWithPath: outcome.path))
+                #else
                 try data.write(to: URL(fileURLWithPath: outcome.path), options: .atomic)
+                #endif
             } catch {
                 throw MTLExecutionError.fileError("Failed to write file \(outcome.path): \(error)")
             }
