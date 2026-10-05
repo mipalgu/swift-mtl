@@ -20,7 +20,7 @@ This package contains no executable. The `swift-mtl` command-line tool is provid
 - The MOFM2T whitespace rule for lines that contain only block tags
 - A generator with pluggable output strategies: in-memory (`MTLInMemoryStrategy`) and file system (`MTLFileSystemStrategy`)
 - Protected areas written with configurable start and end prefixes, preserved automatically when files are regenerated
-- Deferred `[collect]` and `[emit]` blocks, `[merge]` regeneration merging, generator options and file post-processors
+- Deferred `[collect]` and `[emit]` blocks, `[merge]` regeneration merging, `[layout]` code style conversion, generator options and file post-processors
 
 ## Installation
 
@@ -181,6 +181,30 @@ that are no longer produced are removed. Blocks are matched by normalised
 signature within the matching parent. Lines of an `[emit]` region present in
 the old file but missing from the new one are kept.
 
+### Layout Conversion
+
+A module can convert the layout of its generated files to a code style, using
+lexical data only:
+
+```
+[layout ('indent=\t', 'targetIndent=  ', 'opener=sameLine', 'files=*.java')/]
+```
+
+`indent` and `targetIndent` replace each leading indentation unit of a line;
+`opener=sameLine` moves a block opener (`openerToken`, default `{`) that stands
+alone on its line to the end of the preceding line, unless that line ends in a
+statement terminator or comment, or is itself an opener. Comment markers,
+quotes and terminators are configurable (`lineComments`, `blockComment`,
+`quotes`, `terminators`), and `files` scopes the declaration with the same
+globs as `[merge]`. A `[file]` block opts out with `'layout=false'`.
+
+The programmatic equivalent is `MTLGeneratorOptions(layout:)` with an
+`MTLLayoutConfiguration`, which overrides the module declaration;
+`MTLLayoutPostProcessor` applies a configuration as a post-processor. Freshly
+generated text is converted before it is merged with an existing file, which
+is already in the target layout, and preserved protected areas are never
+converted. See SYNTAX.md for the exact rules.
+
 ### File Context
 
 In `create` mode an existing file is left untouched: no error is raised and the
@@ -207,7 +231,7 @@ unsupported charset, is an error and nothing is written.
 
 `MTLFileSystemStrategy` and `MTLInMemoryStrategy` accept
 `MTLGeneratorOptions` (`forceOverwrite`, `redirectionPattern` such as
-`.{0}.new`, `lineDelimiter`) and an ordered list of `MTLFilePostProcessor`
+`.{0}.new`, `lineDelimiter`, `layout`) and an ordered list of `MTLFilePostProcessor`
 values that transform the content before it is written. Existing `[protected]`
 areas are preserved automatically when a file is regenerated.
 

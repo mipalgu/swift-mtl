@@ -448,6 +448,16 @@ public final class MTLExecutionContext: Sendable {
         await currentWriter.writeLine(text, indent: indent)
     }
 
+    /// Marks preserved protected area text so that layout conversion leaves it alone.
+    ///
+    /// Inside a file, the text is wrapped in markers that are removed when the file is closed.
+    ///
+    /// - Parameter text: The preserved text of a protected area.
+    /// - Returns: The text to write.
+    func markVerbatim(_ text: String) -> String {
+        deferredStates.count > 1 ? MTLVerbatimMarkers.wrap(text) : text
+    }
+
     /// Records whether the next text statement drops the line break it starts with.
     ///
     /// - Parameter absorbs: `true` to drop that line break
@@ -530,6 +540,12 @@ public final class MTLExecutionContext: Sendable {
             await fileWriter.replaceContent(resolved)
             regions = emitted
         }
+        let verbatim = MTLVerbatimMarkers.strip(await fileWriter.getContent())
+        await fileWriter.replaceContent(verbatim.text)
+        await fileWriter.setLayoutRequest(
+            MTLLayoutRequest(
+                declaration: module.layoutConfiguration, enabled: state.fileOptions.layout,
+                fileURL: state.fileURL, verbatimLines: verbatim.lines))
         let mergeConfiguration = module.mergeConfiguration.flatMap { configuration in
             state.fileOptions.merge && configuration.applies(toFile: state.fileURL) ? configuration : nil
         }

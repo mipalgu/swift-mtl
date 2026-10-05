@@ -130,7 +130,7 @@ private actor MTLLexer {
         "file",
 
         // Generation facilities (see MTLGenerationKeywords)
-        MTLGenerationKeywords.emit, MTLGenerationKeywords.merge,
+        MTLGenerationKeywords.emit, MTLGenerationKeywords.merge, MTLGenerationKeywords.layout,
 
         // Protected areas
         "protected",
@@ -762,6 +762,7 @@ private actor MTLSyntaxParser {
         var imports: [String] = []
         var extendsModule: String? = header.extends
         var mergeConfiguration: MTLMergeConfiguration? = nil
+        var layoutConfiguration: MTLLayoutConfiguration? = nil
 
         // Parse top-level declarations
         while let token = current(), token.type != .eof {
@@ -808,6 +809,11 @@ private actor MTLSyntaxParser {
                     if mergeConfiguration != nil { throw error("Duplicate merge declaration") }
                     mergeConfiguration = try parseMergeDeclaration()
 
+                case .keyword(MTLGenerationKeywords.layout):
+                    advance()  // Consume 'layout' keyword
+                    if layoutConfiguration != nil { throw error("Duplicate layout declaration") }
+                    layoutConfiguration = try parseLayoutDeclaration()
+
                 case .comment:
                     // Skip comments
                     advance()
@@ -850,7 +856,8 @@ private actor MTLSyntaxParser {
             metamodelURIs: header.metamodelURIs,
             templateOverloads: templateOverloads,
             queryOverloads: queryOverloads,
-            mergeConfiguration: mergeConfiguration
+            mergeConfiguration: mergeConfiguration,
+            layoutConfiguration: layoutConfiguration
         )
 
         debugPrint("Module parsing complete: \(templates.count) templates, \(queries.count) queries, \(macros.count) macros")
@@ -1728,6 +1735,12 @@ private actor MTLSyntaxParser {
             switch value {
             case MTLFileOptionKeys.enabled: options.merge = true
             case MTLFileOptionKeys.disabled: options.merge = false
+            default: throw error("The '\(key)' file option needs 'true' or 'false', got '\(value)'")
+            }
+        case MTLFileOptionKeys.layout:
+            switch value {
+            case MTLFileOptionKeys.enabled: options.layout = true
+            case MTLFileOptionKeys.disabled: options.layout = false
             default: throw error("The '\(key)' file option needs 'true' or 'false', got '\(value)'")
             }
         default:
@@ -2871,5 +2884,73 @@ extension MTLSyntaxParser {
         return MTLMergeConfiguration(
             commentStart: arguments[0], commentEnd: arguments[1], generatedTag: arguments[2],
             keepTag: arguments[3], strategy: strategy, syntax: syntax, filePatterns: filePatterns)
+    }
+
+    /// Parses `[layout (option, ...)/]`, where every option is a `key=value` string;
+    /// the `layout` keyword is already consumed.
+    fileprivate func parseLayoutDeclaration() throws -> MTLLayoutConfiguration {
+        try expect(.leftParen)
+        var arguments: [String] = []
+        while true {
+            guard case .stringLiteral(let value) = current()?.type else {
+                throw error("Expected a string literal in layout declaration")
+            }
+            arguments.append(value)
+            advance()
+            if current()?.type == .comma {
+                advance()
+            } else {
+                break
+            }
+        }
+        try expect(.rightParen)
+        if current()?.type == .slash { advance() }
+        try expect(.rightBracket)
+
+        var layout = MTLLayoutConfiguration()
+        for option in arguments {
+            guard let separator = option.firstIndex(of: MTLMergeOptionKeys.assignment) else {
+                throw error("Expected key=value layout option, got '\(option)'")
+            }
+            let key = String(option[..<separator])
+            let value = String(option[option.index(after: separator)...])
+            switch key {
+            case MTLLayoutOptionKeys.indent:
+                layout.sourceIndent = value
+            case MTLLayoutOptionKeys.targetIndent:
+                layout.targetIndent = value
+            case MTLLayoutOptionKeys.opener:
+                guard let placement = MTLOpenerPlacement(rawValue: value) else {
+                    throw error("Unknown opener placement '\(value)'")
+                }
+                layout.openerPlacement = placement
+            case MTLLayoutOptionKeys.openerToken:
+                guard let token = value.first, value.count == 1 else {
+                    throw error("The openerToken option needs a single character")
+                }
+                layout.syntax.opener = token
+            case MTLLayoutOptionKeys.lineComments:
+                layout.syntax.lineComments = value.split(separator: " ").map(String.init)
+            case MTLLayoutOptionKeys.blockComment:
+                let parts = value.split(separator: " ").map(String.init)
+                guard parts.count == 2 else {
+                    throw error("A block comment option needs a start and an end delimiter")
+                }
+                layout.syntax.blockComments = [MTLMergeSyntax.BlockComment(start: parts[0], end: parts[1])]
+            case MTLLayoutOptionKeys.quotes:
+                layout.syntax.quotes = Array(value)
+            case MTLLayoutOptionKeys.terminators:
+                layout.syntax.terminators = Array(value)
+            case MTLLayoutOptionKeys.files:
+                layout.filePatterns = value.split(separator: MTLMergeOptionKeys.filePatternSeparator)
+                    .map(String.init)
+                guard !layout.filePatterns.isEmpty else {
+                    throw error("The files option needs at least one pattern")
+                }
+            default:
+                throw error("Unknown layout option '\(key)'")
+            }
+        }
+        return layout
     }
 }

@@ -166,6 +166,12 @@ public struct MTLModule: Sendable, Equatable, Hashable {
     /// new text instead of being overwritten.
     public let mergeConfiguration: MTLMergeConfiguration?
 
+    /// The layout conversion declared with `[layout (...)/]`.
+    ///
+    /// When present, generated files are converted to the declared indentation
+    /// and opener placement, unless the generator options supply their own layout.
+    public let layoutConfiguration: MTLLayoutConfiguration?
+
     // MARK: - Initialisation
 
     /// Creates a new MTL module with the specified configuration.
@@ -186,6 +192,7 @@ public struct MTLModule: Sendable, Equatable, Hashable {
     ///   - importedModules: The loaded imports (default: empty)
     ///   - extendedModule: The loaded parent module (default: nil)
     ///   - mergeConfiguration: Tagged-block merge configuration (default: nil)
+    ///   - layoutConfiguration: Layout conversion (default: nil)
     ///
     /// - Precondition: The module name must be a non-empty string
     public init(
@@ -203,7 +210,8 @@ public struct MTLModule: Sendable, Equatable, Hashable {
         location: URL? = nil,
         importedModules: [MTLModule] = [],
         extendedModule: MTLModule? = nil,
-        mergeConfiguration: MTLMergeConfiguration? = nil
+        mergeConfiguration: MTLMergeConfiguration? = nil,
+        layoutConfiguration: MTLLayoutConfiguration? = nil
     ) {
         precondition(!name.isEmpty, "Module name must not be empty")
 
@@ -216,6 +224,7 @@ public struct MTLModule: Sendable, Equatable, Hashable {
         self.macros = macros
         self.encoding = encoding
         self.mergeConfiguration = mergeConfiguration
+        self.layoutConfiguration = layoutConfiguration
         self.metamodelURIs = metamodelURIs
         self.templateOverloads = templateOverloads
         self.queryOverloads = queryOverloads
@@ -301,7 +310,8 @@ public struct MTLModule: Sendable, Equatable, Hashable {
             location: location,
             importedModules: imports,
             extendedModule: extendedModule,
-            mergeConfiguration: mergeConfiguration
+            mergeConfiguration: mergeConfiguration,
+            layoutConfiguration: layoutConfiguration
         )
     }
 
@@ -358,6 +368,7 @@ public struct MTLModule: Sendable, Equatable, Hashable {
             && lhs.importedModules == rhs.importedModules
             && lhs.extendedModule == rhs.extendedModule
             && lhs.mergeConfiguration == rhs.mergeConfiguration
+            && lhs.layoutConfiguration == rhs.layoutConfiguration
     }
 
     // MARK: - Hashable
@@ -392,6 +403,7 @@ public struct MTLModule: Sendable, Equatable, Hashable {
         hasher.combine(importedModules)
         hasher.combine(extendedModule)
         hasher.combine(mergeConfiguration)
+        hasher.combine(layoutConfiguration)
 
         // Hash template values
         for (key, template) in templates.sorted(by: { $0.key < $1.key }) {
