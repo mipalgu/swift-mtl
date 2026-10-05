@@ -76,9 +76,15 @@ enum MTLTestSupport {
 
     /// The URL of a fixture directory below the test resources.
     ///
+    /// Depending on the toolchain, the copied `Resources` directory is either the
+    /// bundle's resource directory itself or nested inside it, so both are tried.
+    ///
     /// - Parameter path: The path below `Resources`.
     /// - Returns: The file URL of the resource.
     static func resource(_ path: String) -> URL {
-        Bundle.module.resourceURL!.appendingPathComponent("Resources").appendingPathComponent(path)
+        let base = Bundle.module.resourceURL!
+        let nested = base.appendingPathComponent("Resources").appendingPathComponent(path)
+        if FileManager.default.fileExists(atPath: nested.path) { return nested }
+        return base.appendingPathComponent(path)
     }
 }
