@@ -87,6 +87,11 @@ jobs:
       - name: Swift version
         run: swift --version
 
+      - name: Install SDK download tools
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends ca-certificates curl
+
       - name: Install WebAssembly SDK
         run: |
           curl --fail --location --retry 3 --output /tmp/swift-wasm-sdk.tar.gz \
