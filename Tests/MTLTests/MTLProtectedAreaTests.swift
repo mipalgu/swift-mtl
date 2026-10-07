@@ -66,7 +66,7 @@ struct MTLProtectedAreaTests {
         More generated code
         """
 
-        try content.write(toFile: tempFile, atomically: true, encoding: .utf8)
+        try content.write(toFile: tempFile, atomically: testWritesAtomically, encoding: .utf8)
 
         // Scan file
         try await manager.scanFile(tempFile)

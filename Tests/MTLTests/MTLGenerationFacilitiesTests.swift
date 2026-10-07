@@ -315,7 +315,7 @@ struct MTLGenerationFacilitiesTests {
             .replacingOccurrences(
                 of: "/**\n     * @generated\n     */\n    public int a() { return 1; }",
                 with: "/**\n     * @generated NOT\n     */\n    public int a() { return 99; }")
-        try edited.write(toFile: target, atomically: true, encoding: .utf8)
+        try edited.write(toFile: target, atomically: testWritesAtomically, encoding: .utf8)
 
         // Regeneration merges
         try await generateToDirectory(javaTemplate, directory: directory.path)
@@ -362,7 +362,7 @@ struct MTLGenerationFacilitiesTests {
         #expect(original.contains("default body"))
 
         let edited = original.replacingOccurrences(of: "default body", with: "user code\nsecond line")
-        try edited.write(toFile: target, atomically: true, encoding: .utf8)
+        try edited.write(toFile: target, atomically: testWritesAtomically, encoding: .utf8)
 
         try await generateToDirectory(source, directory: directory.path)
         let regenerated = try String(contentsOfFile: target, encoding: .utf8)
@@ -407,7 +407,7 @@ struct MTLGenerationFacilitiesTests {
         defer { directory?.remove() }
         let strategy = MTLFileSystemStrategy(basePath: directory?.path ?? "/nonexistent")
         #expect(await strategy.existingContent(url: "none.txt") == nil)
-        try? "hello".write(toFile: directory!.file("some.txt"), atomically: true, encoding: .utf8)
+        try? "hello".write(toFile: directory!.file("some.txt"), atomically: testWritesAtomically, encoding: .utf8)
         #expect(await strategy.existingContent(url: "some.txt") == "hello")
     }
 }

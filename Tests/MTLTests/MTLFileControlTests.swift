@@ -41,7 +41,7 @@ struct FileControlHarness {
             let target = directory.file(path)
             try FileManager.default.createDirectory(
                 atPath: (target as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-            try content.write(toFile: target, atomically: true, encoding: .utf8)
+            try content.write(toFile: target, atomically: testWritesAtomically, encoding: .utf8)
         }
     }
 

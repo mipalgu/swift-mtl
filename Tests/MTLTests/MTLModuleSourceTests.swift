@@ -135,7 +135,7 @@ struct MTLModuleSourceTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         try module("onDisk", "[template public t()]d[/template]\n")
-            .write(to: directory.appendingPathComponent("onDisk.mtl"), atomically: true, encoding: .utf8)
+            .write(to: directory.appendingPathComponent("onDisk.mtl"), atomically: testWritesAtomically, encoding: .utf8)
 
         let source = DictionarySource(["lib": module("lib")])
         let linked = try await link(
@@ -150,7 +150,7 @@ struct MTLModuleSourceTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         try module("lib", "[template public fromDisk()]d[/template]\n")
-            .write(to: directory.appendingPathComponent("lib.mtl"), atomically: true, encoding: .utf8)
+            .write(to: directory.appendingPathComponent("lib.mtl"), atomically: testWritesAtomically, encoding: .utf8)
 
         let source = DictionarySource(["lib": module("lib", "[template public fromMemory()]m[/template]\n")])
         let linked = try await link(module("main", imports: ["lib"]), source: source, searchPaths: [directory])
