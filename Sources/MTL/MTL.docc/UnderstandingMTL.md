@@ -122,6 +122,18 @@ swift-aql against the registered models. The parser supports:
 - the type operations `oclIsKindOf`, `oclIsTypeOf`, `oclAsType` and `oclIsUndefined`. The
   bare form applies to `self`.
 
+### Unset features
+
+Reading a feature that has not been set follows the Eclipse Modeling Framework's `eGet`.
+An unset single-valued attribute reads as its declared default or the default of its data
+type (`false`, `0`, `0.0` or the first literal of an enumeration), and an unset many-valued
+feature reads as an empty collection. An unset string, wrapper, character, date or
+arbitrary-precision attribute without a declared default, or an unset single-valued
+reference, reads as `nil`, and `[expression/]` prints nothing for `nil`, so an unset string
+appears as empty text while an unset integer prints `0`. To read every unset feature as
+`nil` instead, create the ``MTLGenerator`` (or ``MTLExecutionContext``) with
+`unsetFeatureReads: .undefined`.
+
 The text escapes `['['/]` and `[']'/]` produce literal brackets.
 
 An ``MTLExpression`` wraps one of these nodes. Calls to templates, queries and macros are

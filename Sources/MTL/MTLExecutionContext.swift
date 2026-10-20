@@ -209,12 +209,17 @@ public final class MTLExecutionContext: Sendable {
     ///   - protectedAreaManager: Optional protected area manager for preserving user code
     ///   - serviceProviders: AQL service providers to register (default: none). Later
     ///     providers take precedence over earlier ones. See ``register(_:)``.
+    ///   - unsetFeatureReads: How templates read structural features that have not been set
+    ///     (default: ``UnsetFeatureReads/defaults``, as the Eclipse Modeling Framework does).
+    ///     The mode applies to the execution engine this initialiser creates; a supplied
+    ///     `aqlContext` keeps the engine it already has.
     public init(
         module: MTLModule,
         generationStrategy: any MTLGenerationStrategy,
         aqlContext: AQLExecutionContext? = nil,
         protectedAreaManager: MTLProtectedAreaManager? = nil,
-        serviceProviders: [any AQLServiceProvider] = []
+        serviceProviders: [any AQLServiceProvider] = [],
+        unsetFeatureReads: UnsetFeatureReads = .defaults
     ) {
         self.module = module
         self.generationStrategy = generationStrategy
@@ -224,7 +229,7 @@ public final class MTLExecutionContext: Sendable {
         if let providedContext = aqlContext {
             self.aqlContext = providedContext
         } else {
-            let engine = ECoreExecutionEngine(models: [:])
+            let engine = ECoreExecutionEngine(models: [:], unsetFeatureReads: unsetFeatureReads)
             self.aqlContext = AQLExecutionContext(executionEngine: engine)
         }
 

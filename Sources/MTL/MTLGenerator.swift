@@ -126,6 +126,14 @@ public final class MTLGenerator {
     /// template execution, variable bindings, and decisions.
     private var debug: Bool = false
 
+    /// How templates read structural features that have not been set.
+    ///
+    /// With ``UnsetFeatureReads/defaults``, the default, an unset attribute reads as its
+    /// declared or data type default and an unset many-valued feature as an empty collection,
+    /// as in the Eclipse Modeling Framework. With ``UnsetFeatureReads/undefined`` an unset
+    /// feature reads as `nil`, which `[expression/]` prints as nothing.
+    public let unsetFeatureReads: UnsetFeatureReads
+
     // MARK: - Initialisation
 
     /// Creates a new MTL generator for the specified module.
@@ -139,17 +147,22 @@ public final class MTLGenerator {
     ///     services of the same name.
     ///   - globals: Global variables visible to every template, query and macro
     ///     (default: none). See ``setGlobalVariable(_:value:)`` for the precedence rules.
+    ///   - unsetFeatureReads: How templates read structural features that have not been set
+    ///     (default: ``UnsetFeatureReads/defaults``). See ``unsetFeatureReads``.
     public init(
         module: MTLModule,
         generationStrategy: any MTLGenerationStrategy,
         serviceProviders: [any AQLServiceProvider] = [],
-        globals: [String: (any EcoreValue)?] = [:]
+        globals: [String: (any EcoreValue)?] = [:],
+        unsetFeatureReads: UnsetFeatureReads = .defaults
     ) {
         self.module = module
+        self.unsetFeatureReads = unsetFeatureReads
         self.executionContext = MTLExecutionContext(
             module: module,
             generationStrategy: generationStrategy,
-            serviceProviders: serviceProviders
+            serviceProviders: serviceProviders,
+            unsetFeatureReads: unsetFeatureReads
         )
         self.statistics = MTLGenerationStatistics()
         for (name, value) in globals {
