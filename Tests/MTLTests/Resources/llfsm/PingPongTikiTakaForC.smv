@@ -1,10 +1,7 @@
-
---
---- (c) 2021-2025 Miguel Carrillo Barajas & Vlad Estivill-Castro
---
-
 MODULE Sensor (g_c)
--- This module models sensor variables of an arrangement of LLFSMs-- (See:-- Carrillo, M. Estivill-Castro, V. Rosenblueth, D. A. 'Verification and Simulation of Time-Domain Properties for Models of Behaviour'--  S. Hammoudi et al. (Eds.): MODELSWARD 2020, CCIS 1361, pp. 1-25, 2021--    https://doi.org/10.1007/978-3-030-67445-8_10)-- Intuitively, for all sensor variable Si, Si has a non-deterministic value.-- Input: (NO INPUTS)
+-- This module models sensor variables of an arrangement of LLFSMs [1]
+-- For all sensor variable Si, Si has a non-deterministic value.
+-- Input: (NO INPUTS)
 -- Sensor variables:
 VAR
 
@@ -87,7 +84,7 @@ TRANS
 	|
 	((!condT00) &   -- Ncond
 	condT01 & -- Pcond
-		(next(pc_PingPong) = 2) 
+		(next(pc_PingPong) = 2)
 		)  -- Next
 
 
@@ -95,7 +92,7 @@ TRANS
 	|
 	((!condT00) & (!condT01) &   -- Ncond
 	condT02 & -- Pcond
-		(next(pc_PingPong) = 3) 
+		(next(pc_PingPong) = 3)
 		)  -- Next
 
 
@@ -103,7 +100,7 @@ TRANS
 	|
 	((!condT00) & (!condT01) & (!condT02) &   -- Ncond
 	condT03 & -- Pcond
-		(next(pc_PingPong) = 2) 
+		(next(pc_PingPong) = 2)
 		)  -- Next
 
 
@@ -118,7 +115,9 @@ TRANS
 
 
 
-MODULE RoundRobinScheduler()-- This module models a round robin scheduler of an arrangement of LLFSMs-- (See:-- Carrillo, M. Estivill-Castro, V. Rosenblueth, D. A. 'Verification and Simulation of Time-Domain Properties for Models of Behaviour'--  S. Hammoudi et al. (Eds.): MODELSWARD 2020, CCIS 1361, pp. 1-25, 2021--    https://doi.org/10.1007/978-3-030-67445-8_10)-- Input: (NO INPUTS)
+MODULE RoundRobinScheduler()
+-- This module models a round robin scheduler of an arrangement of LLFSMs [1]
+-- Input: (NO INPUTS)
 
 -- Output: turn
 
@@ -185,4 +184,3 @@ PingPong : PingPong(sch.executing_0);
 
 --
 -- End  -------------------------------------------------------------
-

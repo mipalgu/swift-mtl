@@ -2,6 +2,10 @@
 [module acceleoFeatures('http://www.eclipse.org/emf/2002/Ecore', 'http://example.com/second')/]
 
 [comment]
+Copyright (c) 2025, 2026 Rene Hexel. All rights reserved.
+[/comment]
+
+[comment]
   A module that uses every construct of the supported Acceleo dialect once.
 [/comment]
 

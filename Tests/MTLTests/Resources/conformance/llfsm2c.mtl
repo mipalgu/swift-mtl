@@ -1,5 +1,9 @@
 [module llfsm2c('http://www.example.org/newGITmetamodelwithtypes')]
 
+[comment]
+Copyright (c) 2025, 2026 Rene Hexel. All rights reserved.
+[/comment]
+
 [template main(arr : Arrangement)]
 [file (arr.arrangementName + '.c', false)]
 /*

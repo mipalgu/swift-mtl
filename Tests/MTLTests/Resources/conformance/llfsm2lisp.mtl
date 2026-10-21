@@ -1,5 +1,9 @@
 [module llfsm2lisp('http://www.example.org/newGITmetamodelwithtypes')]
 
+[comment]
+Copyright (c) 2025, 2026 Rene Hexel. All rights reserved.
+[/comment]
+
 [template main(arr : Arrangement)]
 [file (arr.arrangementName + '.lisp', false)]
 ;;;; Common Lisp simulation generated from LLFSM arrangement: [arr.arrangementName/]

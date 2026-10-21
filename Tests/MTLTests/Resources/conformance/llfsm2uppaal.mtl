@@ -1,5 +1,9 @@
 [module llfsm2uppaal('http://www.example.org/newGITmetamodelwithtypes')]
 
+[comment]
+Copyright (c) 2025, 2026 Rene Hexel. All rights reserved.
+[/comment]
+
 [template main(arr : Arrangement)]
 [file (arr.arrangementName + '.xml', false)]<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.1//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_2.dtd'>

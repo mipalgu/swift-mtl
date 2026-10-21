@@ -40,8 +40,8 @@ endmodule
 
 module PingPong
     PingPong_pc : [0..3] init 0;
-    
-    
+
+
 
     // Initial transition: pseudo-initial to initial state
     [] PingPong_pc=0 & turn=0 & !scheduler_turn ->
