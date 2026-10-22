@@ -119,7 +119,7 @@ The full syntax reference is in [SYNTAX.md](SYNTAX.md).
 
 ### Imports, extends, and the module resolver
 
-`[import qualified::module::name/]` and `extends` look modules up through `MTLModuleResolver`. It tries the directory of the importing file first and then each search path in order. Pass search paths to the parser:
+`[import qualified::module::name/]` and `extends` look modules up through `MTLModuleResolver`. It tries the directory of the importing file first (so `[import a::b/]` in `app/main.mtl` finds `app/a/b.mtl`) and then each search path in order. Pass search paths to the parser:
 
 ```swift
 let parser = MTLParser(searchPaths: [URL(fileURLWithPath: "templates")])
@@ -316,6 +316,28 @@ generator.setGlobalVariable("author", value: "A. Person")
 A global shadows nothing: a template parameter or `let` variable of the same name hides it
 inside its own scope only. Templates, queries and macros are invoked with parentheses, so they
 never clash with a global of the same name.
+
+### Named parameters
+
+`MTLParameterServices` turns `name=value` text (for example from command line options) into global variables and services. Names must be identifiers that the syntax does not reserve; `true` and `false` become booleans, canonical whole numbers become integers, and everything else is a string:
+
+```swift
+let parameters = try MTLParameterServices(arguments: ["package=org.example", "verbose=true"])
+parameters.bind(to: generator)   // [package/] now reads the value
+generator.register(parameters)   // parameter('package') and hasParameter('package')
+```
+
+Use `init(parameters:)` for text values, `init(values:)` for typed values, and `MTLParameterServices.parse(_:)` to read a single `name=value`. Problems throw `MTLParameterError`.
+
+### Calling queries from other hosts
+
+`MTLQueryHelpers.helpers(for:generator:)` lists the `[query]` definitions of a module and the public queries of its imports as `MTLQueryHelper` values, each with a name, parameter types, return type and an asynchronous `call` closure. The first argument is the receiver, the first declared parameter, so `e.render('c')` maps onto `render(e : Expression, lang : String)`. `MTLQueryHelpers.call(_:arguments:among:)` picks the overload that fits the arguments. `MTLQueryServices` offers the same queries to AQL-based hosts as services, callable as `e.render('c')` and `render(e, 'c')`:
+
+```swift
+let helpers = MTLQueryHelpers.helpers(for: module)
+let text = try await MTLQueryHelpers.call("render", arguments: [element, "c"], among: helpers)
+generator.register(MTLQueryServices(module: module))
+```
 
 ## Project Structure
 
