@@ -27,6 +27,7 @@ swift test
 - `MTLIntegrationTests.swift`: end-to-end generation from parsed and constructed modules
 - `MTLIndentationTests.swift`: indentation handling
 - `MTLProtectedAreaTests.swift`: protected area handling
+- `MTLResourceServicesTests.swift`: text resources read from root directories, path validation, and the `resourceText` and `resourceExists` services
 - `MTLTests.swift`: index of the suites (no tests of its own)
 
 `Support/MTLTestSupport.swift` holds the shared helpers for parsing a module, running a template with `MTLInMemoryStrategy`, and locating fixtures.

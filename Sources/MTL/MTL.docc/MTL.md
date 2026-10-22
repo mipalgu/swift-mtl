@@ -104,10 +104,12 @@ swift-aql release. See <doc:UnderstandingMTL> for details.
 
 - ``MTLProtectedAreaManager``
 
-### Parameters and Query Helpers
+### Parameters, Resources and Query Helpers
 
 - ``MTLParameterServices``
 - ``MTLParameterServiceName``
+- ``MTLResourceServices``
+- ``MTLResourceServiceName``
 - ``MTLQueryHelpers``
 - ``MTLQueryHelper``
 - ``MTLQueryServices``
@@ -115,6 +117,7 @@ swift-aql release. See <doc:UnderstandingMTL> for details.
 ### Errors
 
 - ``MTLParameterError``
+- ``MTLResourceServicesError``
 - ``MTLParseError``
 - ``MTLExecutionError``
 - ``MTLResourceError``

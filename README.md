@@ -329,6 +329,17 @@ generator.register(parameters)   // parameter('package') and hasParameter('packa
 
 Use `init(parameters:)` for text values, `init(values:)` for typed values, and `MTLParameterServices.parse(_:)` to read a single `name=value`. Problems throw `MTLParameterError`.
 
+### Text resources
+
+`MTLResourceServices` lets templates emit text files that are shipped beside them, such as support headers or licence texts, without copying that text into a template. Give it one or more root directories, searched in order; `init(module:roots:)` searches the directory of the parsed module first:
+
+```swift
+let module = try await MTLParser().parse(templateURL)
+generator.register(MTLResourceServices(module: module, roots: [sharedResources]))
+```
+
+`resourceText('support/a.h')` returns the file content exactly as stored, and `resourceExists('support/a.h')` tells whether a root contains the file, so that `[file ('a.h', false, 'UTF-8')][resourceText('support/a.h')/][/file]` writes it verbatim. Paths are relative; empty or absolute paths, drive names and `..` components are rejected. Missing files, files that are not UTF-8 text and invalid paths throw `MTLResourceServicesError`.
+
 ### Calling queries from other hosts
 
 `MTLQueryHelpers.helpers(for:generator:)` lists the `[query]` definitions of a module and the public queries of its imports as `MTLQueryHelper` values, each with a name, parameter types, return type and an asynchronous `call` closure. The first argument is the receiver, the first declared parameter, so `e.render('c')` maps onto `render(e : Expression, lang : String)`. `MTLQueryHelpers.call(_:arguments:among:)` picks the overload that fits the arguments. `MTLQueryServices` offers the same queries to AQL-based hosts as services, callable as `e.render('c')` and `render(e, 'c')`:
