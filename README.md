@@ -342,10 +342,12 @@ generator.register(MTLResourceServices(module: module, roots: [sharedResources])
 
 ### Calling queries from other hosts
 
-`MTLQueryHelpers.helpers(for:generator:)` lists the `[query]` definitions of a module and the public queries of its imports as `MTLQueryHelper` values, each with a name, parameter types, return type and an asynchronous `call` closure. The first argument is the receiver, the first declared parameter, so `e.render('c')` maps onto `render(e : Expression, lang : String)`. `MTLQueryHelpers.call(_:arguments:among:)` picks the overload that fits the arguments. `MTLQueryServices` offers the same queries to AQL-based hosts as services, callable as `e.render('c')` and `render(e, 'c')`:
+`MTLQueryHelpers.helpers(for:generator:)` lists the `[query]` definitions of a module and the public queries of its imports as `MTLQueryHelper` values, each with a name, parameter types, return type and an asynchronous `call` closure. The first argument is the receiver, the first declared parameter, so `e.render('c')` maps onto `render(e : Expression, lang : String)`. `MTLQueryHelpers.call(_:arguments:among:)` picks the overload that fits the arguments. Queries that follow references need the models that hold the objects: register them with `MTLGenerator.registerModel(_:resource:)` on the generator that you pass to `helpers(for:generator:)`. `MTLQueryServices` offers the same queries to AQL-based hosts as services, callable as `e.render('c')` and `render(e, 'c')`:
 
 ```swift
-let helpers = MTLQueryHelpers.helpers(for: module)
+let generator = MTLGenerator(module: module, generationStrategy: MTLInMemoryStrategy())
+await generator.registerModel("IN", resource: resource)
+let helpers = MTLQueryHelpers.helpers(for: module, generator: generator)
 let text = try await MTLQueryHelpers.call("render", arguments: [element, "c"], among: helpers)
 generator.register(MTLQueryServices(module: module))
 ```

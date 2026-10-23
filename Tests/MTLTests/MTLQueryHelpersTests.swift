@@ -127,6 +127,30 @@ struct MTLQueryHelpersTests {
         #expect(try await MTLQueryHelpers.call("q", arguments: ["x"], among: helpers) as? String == "x!")
     }
 
+    @Test("Queries navigate the models registered with the supplied generator")
+    @MainActor
+    func registeredModels() async throws {
+        let string = EDataType(name: "EString")
+        var node = EClass(name: "Node")
+        node.eStructuralFeatures.append(EAttribute(name: "name", eType: string))
+        node.eStructuralFeatures.append(EReference(name: "next", eType: node))
+        var first = DynamicEObject(eClass: node)
+        var second = DynamicEObject(eClass: node)
+        second.eSet("name", value: "second")
+        first.eSet("next", value: second.id)
+        let resource = Resource()
+        await resource.add(first)
+        await resource.add(second)
+        let module = try await MTLTestSupport.parse(
+            "[module m('u')/]\n[query follow(e : OclAny) : String = if e.next.oclIsUndefined() then '-' else e.next.name endif/]")
+        let unregistered = MTLQueryHelpers.helpers(for: module)
+        #expect(try await MTLQueryHelpers.call("follow", arguments: [first], among: unregistered) as? String == "-")
+        let generator = MTLGenerator(module: module, generationStrategy: MTLInMemoryStrategy())
+        await generator.registerModel("IN", resource: resource)
+        let helpers = MTLQueryHelpers.helpers(for: module, generator: generator)
+        #expect(try await MTLQueryHelpers.call("follow", arguments: [first], among: helpers) as? String == "second")
+    }
+
     @Test("Queries are callable as AQL services in both forms")
     @MainActor
     func services() async throws {

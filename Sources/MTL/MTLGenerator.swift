@@ -207,6 +207,23 @@ public final class MTLGenerator {
         executionContext.register(provider)
     }
 
+    // MARK: - Models
+
+    /// Registers an input model under an alias.
+    ///
+    /// ``generate(mainTemplate:arguments:models:)`` registers the models it is given in the same
+    /// way. Register models directly to run the queries of the module through
+    /// ``MTLQueryHelpers/helpers(for:generator:)`` without generating any text: the queries can
+    /// then follow references to the objects of the model and use whole-model services such as
+    /// `allInstances()` and `eContainer()`.
+    ///
+    /// - Parameters:
+    ///   - alias: The alias of the model, such as `IN`.
+    ///   - resource: The resource that holds the model.
+    public func registerModel(_ alias: String, resource: Resource) async {
+        await executionContext.registerModel(alias, resource: resource)
+    }
+
     // MARK: - Debug Control
 
     /// Enables or disables debug mode.
