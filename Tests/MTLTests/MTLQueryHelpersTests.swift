@@ -24,7 +24,7 @@ struct MTLQueryHelpersTests {
             let url = root.appendingPathComponent(path)
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try text.write(to: url, atomically: true, encoding: .utf8)
+            try text.write(to: url, atomically: testWritesAtomically, encoding: .utf8)
         }
         return root
     }
