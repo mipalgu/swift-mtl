@@ -103,7 +103,8 @@ public enum MTLCharset: Sendable, Equatable, Hashable {
         var bytes = data
         if bytes.starts(with: byteOrderMark) { bytes = bytes.dropFirst(byteOrderMark.count) }
         guard self == .utf8 else { return String(data: bytes, encoding: encoding) }
-        return String(validating: bytes, as: UTF8.self)
+        let text = String(decoding: bytes, as: UTF8.self)
+        return text.utf8.elementsEqual(bytes) ? text : nil
     }
 
     /// Reads a file in this charset.
