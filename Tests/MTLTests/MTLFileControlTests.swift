@@ -505,6 +505,14 @@ struct MTLCharsetTests {
         #expect(charset.decode(data) == "na\u{EF}ve")
     }
 
+    @Test("Bytes that are not valid UTF-8 do not decode, whatever precedes them")
+    func invalidUTF8() {
+        #expect(MTLCharset.utf8.decode(Data([0x00, 0x7F, 0x80, 0xFF])) == nil)
+        #expect(MTLCharset.utf8.decode(Data([0x80, 0xFF])) == nil)
+        #expect(MTLCharset.utf8.decode(Data([0x00, 0x41])) == "\u{0}A")
+        #expect(MTLCharset.utf8.decode(Data([0xEF, 0xBB, 0xBF, 0x41])) == "\u{FEFF}A")
+    }
+
     @Test("Files of unknown charset are read by detection", arguments: FileControlStrategy.allCases)
     func detection(kind: FileControlStrategy) throws {
         let directory = try TemporaryDirectory()
