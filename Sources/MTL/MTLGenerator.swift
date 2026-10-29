@@ -283,7 +283,7 @@ public final class MTLGenerator {
     /// is called on the main actor each time a template starts or finishes and each time a file
     /// is opened or finished, and once more when the run ends.
     ///
-    /// While the run lasts, the containment structure of the models is examined only once for
+    /// While the run lasts, the container of each model object is looked up only once for
     /// `eContainer()`, `ancestors()` and the sibling services, so the models must not change
     /// during the run except through services that declare ``AQLService/modifiesModels``.
     ///

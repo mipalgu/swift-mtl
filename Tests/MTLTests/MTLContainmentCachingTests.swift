@@ -61,8 +61,8 @@ private struct ContainmentProbeServices: AQLServiceProvider {
     var services: [AQLService] {
         let model = self.model
         return [
-            AQLService("indexBuilds", receiver: .standalone) { call in
-                call.context.containmentIndexBuilds
+            AQLService("containerLookups", receiver: .standalone) { call in
+                call.context.containerLookups
             },
             AQLService("cachesIndex", receiver: .standalone) { call in
                 call.context.cachesContainmentIndex
@@ -91,14 +91,15 @@ struct MTLContainmentCachingTests {
         return (await strategy.getGeneratedFiles()[MTLTestSupport.standardOutput] ?? "", generator)
     }
 
-    @Test("Generation examines the containment structure once")
+    @Test("Generation looks up each container once")
     func generationBuildsIndexOnce() async throws {
         let model = await TwoParentModel()
         let (output, _) = try await generate("""
             [module m('u')/]
-            [template main(o : OclAny)][for (i : Integer | Sequence{1, 2, 3, 4, 5, 6, 7, 8, 9, 10})][o.eContainer().name/],[o.ancestors()->size()/],[o.siblings()->size()/];[/for][cachesIndex()/],[indexBuilds()/][/template]
+            [template main(o : OclAny)][for (i : Integer | Sequence{1, 2, 3, 4, 5, 6, 7, 8, 9, 10})][o.eContainer().name/],[o.ancestors()->size()/],[o.siblings()->size()/];[/for][cachesIndex()/],[containerLookups()/][/template]
             """, model: model)
-        #expect(output == String(repeating: "first,2,0;", count: 10) + "true,1")
+        // The containers of child, first and root are each looked up once.
+        #expect(output == String(repeating: "first,2,0;", count: 10) + "true,3")
     }
 
     @Test("A model-changing service called during generation is seen by later queries")

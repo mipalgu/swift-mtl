@@ -250,12 +250,12 @@ public final class MTLExecutionContext: Sendable {
 
     // MARK: - Containment Caching
 
-    /// Runs work with the containment structure of the models cached.
+    /// Runs work with the containers of model objects cached.
     ///
-    /// Templates do not change their input models, so the expression evaluator examines the
-    /// containment structure once for `eContainer()`, `ancestors()` and the sibling services
+    /// Templates do not change their input models, so the expression evaluator looks up the
+    /// container of each object once for `eContainer()`, `ancestors()` and the sibling services
     /// and reuses it while the work runs. Registering a model and calling a service that
-    /// declares ``AQLService/modifiesModels`` drop the cached structure. Any cached structure
+    /// declares ``AQLService/modifiesModels`` drop the cached containers. Any cached container
     /// is dropped before and after the work, and the earlier caching setting is restored, so
     /// that later evaluations see changes made to the models in between.
     ///
