@@ -519,7 +519,8 @@ public final class MTLGenerator {
 
         // Bind parameters
         for (parameter, argument) in zip(query.parameters, arguments) {
-            executionContext.setVariable(parameter.name, value: argument)
+            executionContext.setVariable(
+                parameter.name, value: MTLTypeMatcher.boundValue(of: argument, to: parameter.type))
         }
 
         // Evaluate query body

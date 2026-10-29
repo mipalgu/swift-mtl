@@ -873,6 +873,7 @@ public struct MTLMacroInvocation: MTLStatement {
         for argumentExpr in arguments {
             argumentValues.append(try await argumentExpr.evaluate(in: context))
         }
+        argumentValues = await context.resolvedArguments(argumentValues)
 
         // Look up the macro in this module, the modules it extends, and its imports
         guard let (macro, owner) = context.macro(named: macroName, for: argumentValues) else {
