@@ -611,13 +611,6 @@ public final class MTLExecutionContext: Sendable {
         return absorbsNextLineBreak
     }
 
-    /// The length of the text written to the current output so far, in UTF-8 code units.
-    var outputLength: Int {
-        get async {
-            await writerStack.last?.getContent().utf8.count ?? 0
-        }
-    }
-
     /// Whether the current output has text on its last line.
     var isMidLine: Bool {
         get async {

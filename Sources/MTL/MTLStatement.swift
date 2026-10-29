@@ -97,7 +97,9 @@ public struct MTLTextStatement: MTLStatement {
     /// The enclosing ``MTLBlock`` does not duplicate such a line break: it is dropped when the
     /// block that closes on that line wrote text ending in a line break. A block written on one
     /// line, such as `[if (c)][call()/][/if]`, then adds no blank line after a call whose output
-    /// already ends a line, just as an expression tag on a line of its own adds none.
+    /// already ends a line, just as an expression tag on a line of its own adds none. The line
+    /// break is also dropped when the block starts its line and writes nothing, so that such a
+    /// line produces no output, as for an expression tag with no result.
     public let followsClosingTagLine: Bool
 
     /// Creates a new text statement.

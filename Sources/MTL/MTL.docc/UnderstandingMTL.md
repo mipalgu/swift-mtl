@@ -239,8 +239,11 @@ line with text, such as `[if (true)]a[/if]`, keeps the line break.
 A line break directly after an expression tag or a closing block tag is not duplicated. It
 is dropped when the expression, or the block that closes there, wrote text ending in a line
 break, so a template call such as `[helper()/]` or `[if (c)][helper()/][/if]` on a line of
-its own adds no blank line after the output of `helper`. An expression tag alone on its line
-that produces nothing produces no line.
+its own adds no blank line after the output of `helper`. The line break is also dropped when
+nothing has been written on its line: an expression tag that produces nothing, an
+`[if (c)]...[/if]` written on one line whose condition does not hold, or a `[for]` written
+on one line over an empty collection produces no line when it starts its line. Text before
+it on its line, including white space, keeps the line break.
 
 Text is otherwise emitted literally, as in Acceleo 3. Block bodies are not re-indented
 automatically. A multi-line result of an expression, for example from a template call,

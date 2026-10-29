@@ -88,7 +88,9 @@ public struct MTLBlock: Sendable, Equatable, Hashable {
     ///
     /// When a statement is followed by text that starts with the line break of its closing
     /// tag's line (see ``MTLTextStatement/followsClosingTagLine``), that line break is dropped
-    /// if the statement wrote text ending in a line break, so that it is not duplicated.
+    /// if the current line is empty once the statement has run: either the statement wrote
+    /// text ending in a line break, so that the line break is not duplicated, or it stood at
+    /// the start of its line and wrote nothing, so that it produces no line.
     ///
     /// - Parameter context: The execution context
     /// - Throws: `MTLExecutionError` if any statement execution fails
@@ -106,14 +108,9 @@ public struct MTLBlock: Sendable, Equatable, Hashable {
 
         try await context.checkpoint()
         for (index, statement) in statements.enumerated() {
-            if endsClosingTagLine(at: index) {
-                let lengthBefore = await context.outputLength
-                try await statement.execute(in: context)
-                if await context.outputLength > lengthBefore, !(await context.isMidLine) {
-                    context.absorbNextLineBreak(true)
-                }
-            } else {
-                try await statement.execute(in: context)
+            try await statement.execute(in: context)
+            if endsClosingTagLine(at: index), !(await context.isMidLine) {
+                context.absorbNextLineBreak(true)
             }
             try await context.checkpoint()
         }

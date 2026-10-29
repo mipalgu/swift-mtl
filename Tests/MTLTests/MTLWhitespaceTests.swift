@@ -413,11 +413,11 @@ struct MTLWhitespaceTests {
         #expect(output == "a\r\nline x\r\nb\r\n")
     }
 
-    @Test("A one-line if that produces nothing keeps the line break of its line")
+    @Test("A one-line if that produces nothing alone on its line produces no line")
     @MainActor
     func emptyInlineIfLine() async throws {
         let output = try await MTLTestSupport.output(Self.writingLine("[if (false)][line('x')/][/if]"))
-        #expect(output == "a\n\nb\n")
+        #expect(output == "a\nb\n")
     }
 
     @Test("A one-line if that produces nothing after text keeps the line break")
@@ -448,7 +448,7 @@ struct MTLWhitespaceTests {
             [/template]
             """
         #expect(try await MTLTestSupport.output(source, arguments: [1]) == "a\nshown\nb\n")
-        #expect(try await MTLTestSupport.output(source, arguments: [2]) == "a\n\nb\n")
+        #expect(try await MTLTestSupport.output(source, arguments: [2]) == "a\nb\n")
     }
 
     @Test("A blank line after a block on lines of its own is kept")
@@ -465,5 +465,148 @@ struct MTLWhitespaceTests {
             [/template]
             """)
         #expect(output == "x\n\ny\n")
+    }
+
+    // MARK: - Lines of Blocks That Produce Nothing
+
+    @Test("A one-line if that is not taken before text keeps the text and its line break")
+    @MainActor
+    func untakenInlineIfBeforeText() async throws {
+        let output = try await MTLTestSupport.output(Self.writingLine("[if (false)]x[/if] after"))
+        #expect(output == "a\n after\nb\n")
+    }
+
+    @Test("A one-line if that is not taken between texts keeps the line")
+    @MainActor
+    func untakenInlineIfBetweenTexts() async throws {
+        let output = try await MTLTestSupport.output(Self.writingLine("before [if (false)]x[/if] after"))
+        #expect(output == "a\nbefore  after\nb\n")
+    }
+
+    @Test("A one-line if that is not taken after white space keeps the line like an expression")
+    @MainActor
+    func untakenInlineIfAfterWhiteSpace() async throws {
+        let block = try await MTLTestSupport.output(Self.writingLine("  [if (false)]x[/if]"))
+        let expression = try await MTLTestSupport.output(Self.writingLine("  [''/]"))
+        #expect(block == "a\n  \nb\n")
+        #expect(block == expression)
+    }
+
+    @Test("A one-line if whose else branch writes nothing produces no line")
+    @MainActor
+    func inlineElseWritingNothing() async throws {
+        let output = try await MTLTestSupport.output(Self.writingLine("[if (false)]x[else][''/][/if]"))
+        #expect(output == "a\nb\n")
+    }
+
+    @Test("A one-line if around an expression with no result produces no line")
+    @MainActor
+    func inlineIfAroundEmptyExpression() async throws {
+        let output = try await MTLTestSupport.output(Self.writingLine("[if (true)][''/][/if]"))
+        #expect(output == "a\nb\n")
+    }
+
+    @Test("A one-line for over an empty collection produces no line")
+    @MainActor
+    func inlineForOverEmptyCollection() async throws {
+        let output = try await MTLTestSupport.output(
+            Self.writingLine("[for (s | Sequence{'x', 'y'}->select(e | e = 'z'))][s/][/for]"))
+        #expect(output == "a\nb\n")
+    }
+
+    @Test("A one-line for whose body writes nothing produces no line")
+    @MainActor
+    func inlineForWritingNothing() async throws {
+        let output = try await MTLTestSupport.output(
+            Self.writingLine("[for (s | Sequence{'x', 'y'})][if (s = 'z')][s/][/if][/for]"))
+        #expect(output == "a\nb\n")
+    }
+
+    @Test("A one-line for over a collection writes its items on the line")
+    @MainActor
+    func inlineForOverCollection() async throws {
+        let output = try await MTLTestSupport.output(Self.writingLine("[for (s | Sequence{'x', 'y'})][s/][/for]"))
+        #expect(output == "a\nxy\nb\n")
+    }
+
+    @Test("A one-line let that writes nothing produces no line")
+    @MainActor
+    func inlineLetWritingNothing() async throws {
+        let output = try await MTLTestSupport.output(Self.writingLine("[let v = ''][v/][/let]"))
+        #expect(output == "a\nb\n")
+    }
+
+    @Test("Several one-line blocks that produce nothing produce no lines")
+    @MainActor
+    func consecutiveEmptyInlineBlocks() async throws {
+        let output = try await MTLTestSupport.output("""
+            [module m('u')/]
+            [template main()]
+            [if (false)]x[/if]
+            [for (s | Sequence{'x'}->select(e | e = 'z'))][s/][/for]
+            a
+            [if (false)]y[/if]
+            [/template]
+            """)
+        #expect(output == "a\n")
+    }
+
+    @Test("A blank line after a one-line block that produces nothing is kept")
+    @MainActor
+    func blankLineAfterEmptyInlineBlock() async throws {
+        let output = try await MTLTestSupport.output("""
+            [module m('u')/]
+            [template main()]
+            a
+            [if (false)]x[/if]
+
+            b
+            [/template]
+            """)
+        #expect(output == "a\n\nb\n")
+    }
+
+    @Test("A block that starts on its own line and produces nothing produces no line")
+    @MainActor
+    func emptyBlockStartingOnItsOwnLine() async throws {
+        let source = """
+            [module m('u')/]
+            [template main(n : Integer)]
+            a
+            [if (n = 1)]
+            shown[/if]
+            b
+            [if (n = 1)]
+            shown[/if] after
+            c
+            [/template]
+            """
+        #expect(try await MTLTestSupport.output(source, arguments: [2]) == "a\nb\n after\nc\n")
+    }
+
+    @Test("A one-line if that is not taken produces no line with Windows line endings")
+    @MainActor
+    func untakenInlineIfWithWindowsLineEndings() async throws {
+        let output = try await MTLTestSupport.output(
+            Self.writingLine("[if (false)][line('x')/][/if]", lineEnding: "\r\n"))
+        #expect(output == "a\r\nb\r\n")
+    }
+
+    @Test("A one-line if that is not taken in a called template produces no line")
+    @MainActor
+    func untakenInlineIfInCalledTemplate() async throws {
+        let output = try await MTLTestSupport.output("""
+            [module m('u')/]
+            [template main()]
+            a
+            [body()/]
+            b
+            [/template]
+            [template body()]
+            [if (false)]x[/if]
+            text
+            [/template]
+            """)
+        #expect(output == "a\ntext\nb\n")
     }
 }
