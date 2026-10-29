@@ -248,6 +248,31 @@ public final class MTLExecutionContext: Sendable {
         }
     }
 
+    // MARK: - Containment Caching
+
+    /// Runs work with the containment structure of the models cached.
+    ///
+    /// Templates do not change their input models, so the expression evaluator examines the
+    /// containment structure once for `eContainer()`, `ancestors()` and the sibling services
+    /// and reuses it while the work runs. Registering a model and calling a service that
+    /// declares ``AQLService/modifiesModels`` drop the cached structure. Any cached structure
+    /// is dropped before and after the work, and the earlier caching setting is restored, so
+    /// that later evaluations see changes made to the models in between.
+    ///
+    /// - Parameter body: The work to run.
+    /// - Returns: The result of the work.
+    /// - Throws: Any error the work throws.
+    func withContainmentCaching<Value>(_ body: () async throws -> Value) async rethrows -> Value {
+        let cachedBefore = aqlContext.cachesContainmentIndex
+        aqlContext.invalidateContainmentIndex()
+        aqlContext.cachesContainmentIndex = true
+        defer {
+            aqlContext.invalidateContainmentIndex()
+            aqlContext.cachesContainmentIndex = cachedBefore
+        }
+        return try await body()
+    }
+
     // MARK: - Progress and Cancellation
 
     /// Starts a run: forgets earlier progress and installs the handler.

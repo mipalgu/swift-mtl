@@ -283,6 +283,10 @@ public final class MTLGenerator {
     /// is called on the main actor each time a template starts or finishes and each time a file
     /// is opened or finished, and once more when the run ends.
     ///
+    /// While the run lasts, the containment structure of the models is examined only once for
+    /// `eContainer()`, `ancestors()` and the sibling services, so the models must not change
+    /// during the run except through services that declare ``AQLService/modifiesModels``.
+    ///
     /// The run checks for cancellation at the start of every block and every loop iteration, and
     /// gives other work on the main actor the chance to proceed after every ten milliseconds
     /// of work, so a task that runs the generation keeps the user interface responsive and can
@@ -338,7 +342,9 @@ public final class MTLGenerator {
             }
 
             // Execute the template
-            try await executeTemplate(template, arguments: arguments, owner: owner)
+            try await executionContext.withContainmentCaching {
+                try await executeTemplate(template, arguments: arguments, owner: owner)
+            }
 
             // Finalize
             try await executionContext.finalize()
