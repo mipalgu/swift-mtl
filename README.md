@@ -360,7 +360,7 @@ their elements, and arguments are passed as they are.
 `MTLOptions.legacy` that of version 0.6. Each property selects one behaviour:
 
 | Property | Default | Alternative |
-| --- | --- | --- |
+|--|--|--|
 | `aql` | `AQLOptions.standard`: the expression language behaves as in this release of swift-aql | `AQLOptions.legacy`, or any combination of its options, as described in the swift-aql README |
 | `blockLineBreaks` | `.acceleo`: the line break after a block written on one line is dropped when the line is empty once the block has run, as in Acceleo 4 | `.kept`: the line break is always written |
 | `collectionParameters` | `.conforming`: collections conform to collection types by their elements (see [Collection parameters](#collection-parameters)) | `.exact`: collection types are matched as in version 0.6 |
@@ -492,7 +492,7 @@ initialiser that takes `collectionParameters:`, and `MTLQueryHelpers.helpers(for
 This release changes the following behaviours. Each has an option in `MTLOptions`:
 
 | Behaviour | New default | Option | 0.6 behaviour |
-| --- | --- | --- | --- |
+|--|--|--|--|
 | Expression language: collection arguments added whole, collection kinds kept, `including` on a single value giving a set, containers found through the resources | as in this release of swift-aql | `aql` | `AQLOptions.legacy` |
 | Line break after a block written on one line | dropped when the line is empty once the block has run, as in Acceleo 4 | `blockLineBreaks` | `.kept` |
 | Collections passed to collection-typed parameters | any collection whose elements conform, including many-valued features; references resolved to objects; a single object as the only element; overloads chosen by element types; collection-typed parameters hold collections | `collectionParameters` | `.exact` |
