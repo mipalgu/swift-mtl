@@ -382,7 +382,11 @@ variable named `i` shadows it.
 [let count : Integer = 42][count/][/let]
 ```
 
-Several bindings may be separated by commas; a binding may carry a type.
+Several bindings may be separated by commas; a binding may carry a type. A
+value that does not conform to the declared type is a type error by default,
+while `null` conforms to every type. A generator created with
+`letTypeMismatches: .skip` instead skips the block and reports a warning, as
+Acceleo 3 skips the body of a typed `let` whose value does not conform.
 
 ### File
 

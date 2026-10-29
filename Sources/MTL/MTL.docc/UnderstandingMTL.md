@@ -100,6 +100,24 @@ declared type is a type error, while `null` conforms to every type. `[if (cond)]
 `[elseif (cond)]` and `[else]` select text, and `if ... then ... else ... endif` is also an
 expression.
 
+The OMG MOFM2T specification and Acceleo 3 treat a typed `let` as a type test instead: when
+the value does not conform, the body is skipped silently. To follow them, create the
+``MTLGenerator`` (or ``MTLExecutionContext``) with `letTypeMismatches: .skip`. A mismatch then
+skips the remaining bindings and the body of the block, generation continues after it, and a
+warning with the code ``MTLDiagnosticCode/letTypeMismatch`` that names the variable, its
+declared type and the type of the value is recorded in ``MTLGenerationStatistics/warnings``:
+
+```swift
+let generator = MTLGenerator(
+    module: module, generationStrategy: strategy, letTypeMismatches: .skip)
+try await generator.generate(mainTemplate: "main", arguments: arguments, models: models)
+for warning in generator.statistics.warnings {
+    print("warning: \(warning.message)")
+}
+```
+
+The same mismatch is reported once, even when it recurs in every iteration of a loop.
+
 ## Expressions
 
 Expressions are swift-aql nodes (`AQLExpression`) built by ``MTLParser`` and evaluated by

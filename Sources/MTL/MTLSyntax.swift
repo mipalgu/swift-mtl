@@ -77,6 +77,9 @@ public enum MTLSyntax {
     /// The names of the collection types that may carry an element type in parentheses.
     public static let collectionTypeNames: Set<String> = AQLSyntax.collectionTypeNames
 
+    /// The collection type that every kind of collection conforms to.
+    public static let collectionType = "Collection"
+
     /// The names of the primitive types and the Swift types that implement them.
     public static let primitiveTypeNames: [String: Set<String>] = [
         "String": ["String"],

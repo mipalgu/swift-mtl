@@ -198,6 +198,22 @@ public final class MTLExecutionContext: Sendable {
     /// execution state and decisions.
     public var debug: Bool = false
 
+    /// How `let` blocks treat a value that does not conform to the declared type of its variable.
+    ///
+    /// With ``MTLLetTypeMismatches/error``, the default, a mismatch is a type error. With
+    /// ``MTLLetTypeMismatches/skip`` the body of the block is skipped and a warning is recorded
+    /// in ``warnings``.
+    public let letTypeMismatches: MTLLetTypeMismatches
+
+    /// The distinct warnings of the current run, in the order in which they were first reported.
+    ///
+    /// A warning that repeats an earlier one, such as the same mismatch in every iteration of a
+    /// loop, is recorded once. The warnings are forgotten when the generator starts a new run.
+    public private(set) var warnings: [SourceDiagnostic] = []
+
+    /// The warnings recorded so far, for detecting repetitions.
+    private var recordedWarnings: Set<SourceDiagnostic> = []
+
     // MARK: - Initialisation
 
     /// Creates a new MTL execution context.
@@ -213,15 +229,20 @@ public final class MTLExecutionContext: Sendable {
     ///     (default: ``UnsetFeatureReads/defaults``, as the Eclipse Modeling Framework does).
     ///     The mode applies to the execution engine this initialiser creates; a supplied
     ///     `aqlContext` keeps the engine it already has.
+    ///   - letTypeMismatches: How `let` blocks treat a value that does not conform to the
+    ///     declared type of its variable (default: ``MTLLetTypeMismatches/error``).
+    ///     See ``letTypeMismatches``.
     public init(
         module: MTLModule,
         generationStrategy: any MTLGenerationStrategy,
         aqlContext: AQLExecutionContext? = nil,
         protectedAreaManager: MTLProtectedAreaManager? = nil,
         serviceProviders: [any AQLServiceProvider] = [],
-        unsetFeatureReads: UnsetFeatureReads = .defaults
+        unsetFeatureReads: UnsetFeatureReads = .defaults,
+        letTypeMismatches: MTLLetTypeMismatches = .error
     ) {
         self.module = module
+        self.letTypeMismatches = letTypeMismatches
         self.generationStrategy = generationStrategy
         self.protectedAreaManager = protectedAreaManager ?? MTLProtectedAreaManager()
 
@@ -275,7 +296,7 @@ public final class MTLExecutionContext: Sendable {
 
     // MARK: - Progress and Cancellation
 
-    /// Starts a run: forgets earlier progress and installs the handler.
+    /// Starts a run: forgets earlier progress and warnings, and installs the handler.
     ///
     /// - Parameter handler: The handler to tell about progress, if any.
     func beginRun(reportingTo handler: (@MainActor @Sendable (MTLProgress) -> Void)?) {
@@ -284,6 +305,24 @@ public final class MTLExecutionContext: Sendable {
         currentFiles = []
         runningTemplates = []
         lastYield = ContinuousClock.now
+        warnings = []
+        recordedWarnings = []
+    }
+
+    // MARK: - Warnings
+
+    /// Records a warning unless the same warning has been recorded in this run before.
+    ///
+    /// - Parameters:
+    ///   - code: The code of the warning.
+    ///   - message: A description of the problem.
+    ///   - origin: Where the construct that caused the warning was written.
+    func warn(_ code: MTLDiagnosticCode, _ message: String, at origin: SourceOrigin) {
+        let warning = SourceDiagnostic(
+            severity: .warning, code: code.rawValue, message: message, range: origin.range)
+        guard recordedWarnings.insert(warning).inserted else { return }
+        warnings.append(warning)
+        if debug { print("Warning: \(message)") }
     }
 
     /// Tells the handler about the current progress.

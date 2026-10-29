@@ -64,6 +64,7 @@ swift-aql release. See <doc:UnderstandingMTL> for details.
 
 - ``MTLGenerator``
 - ``MTLGenerationStatistics``
+- ``MTLLetTypeMismatches``
 - ``MTLGenerationStrategy``
 - ``MTLInMemoryStrategy``
 - ``MTLFileSystemStrategy``

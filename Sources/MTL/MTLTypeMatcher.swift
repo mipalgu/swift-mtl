@@ -209,6 +209,21 @@ enum MTLTypeMatcher {
         return AQLValues.collection(AQLValues.coerceToCollection(value))
     }
 
+    /// The name of the type of a value, as a template would declare it.
+    ///
+    /// A model object is named by its metaclass, a collection as ``MTLSyntax/collectionType``,
+    /// and a primitive value by its primitive type, such as `Integer`. Any other value is
+    /// named by the type that implements it.
+    ///
+    /// - Parameter value: The value.
+    /// - Returns: The name of the type of the value.
+    static func typeName(of value: any EcoreValue) -> String {
+        if let object = value as? any EObject { return object.eClass.name }
+        if AQLValues.elements(of: value) != nil { return MTLSyntax.collectionType }
+        let primitive = MTLSyntax.primitiveTypeNames.keys.sorted().first { distance(of: value, to: $0) == 0 }
+        return primitive ?? String(describing: Swift.type(of: value))
+    }
+
     /// Scores a model object against a metaclass name.
     private static func objectDistance(of value: any EcoreValue, to type: String) -> Int? {
         guard let object = value as? any EObject else { return nil }

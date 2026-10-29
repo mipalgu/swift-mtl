@@ -27,6 +27,7 @@ swift test
 - `MTLIntegrationTests.swift`: end-to-end generation from parsed and constructed modules
 - `MTLIndentationTests.swift`: indentation handling
 - `MTLProtectedAreaTests.swift`: protected area handling
+- `MTLLetTypeMismatchTests.swift`: `let` values that do not conform to the declared type, as type errors by default or as skipped blocks with a warning
 - `MTLResourceServicesTests.swift`: text resources read from root directories, path validation, and the `resourceText` and `resourceExists` services
 - `MTLTests.swift`: index of the suites (no tests of its own)
 

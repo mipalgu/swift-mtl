@@ -112,6 +112,7 @@ Key points:
 - Queries and macros: `[query name(p : T) : R = expr/]` and `[macro name(p : T, body : Body)]...[/macro]`. Macros are called as `[name(args)]body[/name]`.
 - Loops: `[for (x : T | collection) separator(s) before(b) after(a)]`. The loop variable type and binding are optional, and the implicit counter `i` is available in the body.
 - Invocations: `[name(args)/]`, `[x.name(a)/]`, and `[self.name()/]`. Resolution looks at the current module, its parents, its imports, and then the AQL library; among overloads the nearest parameter types win.
+- Let blocks: `[let x : T = e, y = f]...[/let]`. A value that does not conform to the declared type is a type error by default; with `letTypeMismatches: .skip` the block is skipped with a warning instead, as in Acceleo 3 (see [Typed let blocks](#typed-let-blocks)).
 - Literal brackets: `['['/]` and `[']'/]`.
 - Protected areas: `[protected ('id', 'startPrefix', 'endPrefix')]...[/protected]`.
 
@@ -305,6 +306,29 @@ During a generation run the container of each model object is looked up once and
 reused by `eContainer()`, `ancestors()` and the sibling services. Templates do not change
 their models; a service that does must be created with `modifiesModels: true`, so that
 later containment queries see the change.
+
+### Typed let blocks
+
+A `let` variable may declare a type, as in `[let names : Sequence(String) = e]...[/let]`. A
+value of a collection type is bound as a collection, and `null` conforms to every type. By
+default, a value that does not conform to the declared type is a type error that stops the
+generation. The OMG MOFM2T specification and Acceleo 3 treat a typed `let` as a type test
+instead and skip its body silently. Pass `letTypeMismatches: .skip` to follow them: the
+block is skipped, generation continues, and a warning that names the variable, its declared
+type and the type of the value is recorded in the generation statistics:
+
+```swift
+let generator = MTLGenerator(
+    module: module, generationStrategy: strategy, letTypeMismatches: .skip)
+try await generator.generate(mainTemplate: "main", arguments: arguments, models: models)
+for warning in generator.statistics.warnings {
+    print("warning: \(warning.message)")
+}
+```
+
+Warnings are `SourceDiagnostic` values with the code `mtl.letTypeMismatch` and the range of
+the `let` block in its template. The same mismatch is reported once per run, even when it
+recurs in every iteration of a loop.
 
 ### Global variables
 

@@ -134,6 +134,14 @@ public final class MTLGenerator {
     /// feature reads as `nil`, which `[expression/]` prints as nothing.
     public let unsetFeatureReads: UnsetFeatureReads
 
+    /// How `let` blocks treat a value that does not conform to the declared type of its variable.
+    ///
+    /// With ``MTLLetTypeMismatches/error``, the default, a mismatch is a type error that stops
+    /// the generation. With ``MTLLetTypeMismatches/skip`` the body of the block is skipped, as
+    /// in Acceleo 3, and a warning is recorded in the ``MTLGenerationStatistics/warnings`` of
+    /// ``statistics``.
+    public let letTypeMismatches: MTLLetTypeMismatches
+
     // MARK: - Initialisation
 
     /// Creates a new MTL generator for the specified module.
@@ -149,20 +157,26 @@ public final class MTLGenerator {
     ///     (default: none). See ``setGlobalVariable(_:value:)`` for the precedence rules.
     ///   - unsetFeatureReads: How templates read structural features that have not been set
     ///     (default: ``UnsetFeatureReads/defaults``). See ``unsetFeatureReads``.
+    ///   - letTypeMismatches: How `let` blocks treat a value that does not conform to the
+    ///     declared type of its variable (default: ``MTLLetTypeMismatches/error``).
+    ///     See ``letTypeMismatches``.
     public init(
         module: MTLModule,
         generationStrategy: any MTLGenerationStrategy,
         serviceProviders: [any AQLServiceProvider] = [],
         globals: [String: (any EcoreValue)?] = [:],
-        unsetFeatureReads: UnsetFeatureReads = .defaults
+        unsetFeatureReads: UnsetFeatureReads = .defaults,
+        letTypeMismatches: MTLLetTypeMismatches = .error
     ) {
         self.module = module
         self.unsetFeatureReads = unsetFeatureReads
+        self.letTypeMismatches = letTypeMismatches
         self.executionContext = MTLExecutionContext(
             module: module,
             generationStrategy: generationStrategy,
             serviceProviders: serviceProviders,
-            unsetFeatureReads: unsetFeatureReads
+            unsetFeatureReads: unsetFeatureReads,
+            letTypeMismatches: letTypeMismatches
         )
         self.statistics = MTLGenerationStatistics()
         for (name, value) in globals {
@@ -353,6 +367,7 @@ public final class MTLGenerator {
             // Record success
             statistics.successful = true
             statistics.executionTime = Date().timeIntervalSince(startTime)
+            statistics.warnings = executionContext.warnings
 
             if debug {
                 print("MTL Generation Completed Successfully")
@@ -364,6 +379,7 @@ public final class MTLGenerator {
             statistics.successful = false
             statistics.executionTime = Date().timeIntervalSince(startTime)
             statistics.lastError = error
+            statistics.warnings = executionContext.warnings
 
             if debug {
                 print("MTL Generation Failed")
@@ -645,6 +661,14 @@ public struct MTLGenerationStatistics: Sendable {
     /// The last error that occurred (if any).
     public var lastError: Error?
 
+    /// The distinct warnings of the run, in the order in which they were first reported.
+    ///
+    /// Each warning is a `SourceDiagnostic` with the severity `warning`, a stable code from
+    /// ``MTLDiagnosticCode`` and, where known, the range of the construct in its template.
+    /// Warnings are recorded whether or not the run succeeds; a warning that repeats an
+    /// earlier one, such as the same mismatch in every iteration of a loop, is recorded once.
+    public var warnings: [SourceDiagnostic] = []
+
     // MARK: - Operations
 
     /// Resets all statistics to their initial state.
@@ -656,6 +680,7 @@ public struct MTLGenerationStatistics: Sendable {
         linesGenerated = 0
         protectedAreasPreserved = 0
         lastError = nil
+        warnings = []
     }
 
     /// Returns a formatted summary of the statistics.
@@ -670,6 +695,7 @@ public struct MTLGenerationStatistics: Sendable {
         lines.append("  Files generated: \(filesGenerated)")
         lines.append("  Lines generated: \(linesGenerated)")
         lines.append("  Protected areas preserved: \(protectedAreasPreserved)")
+        lines.append("  Warnings: \(warnings.count)")
 
         if let error = lastError {
             lines.append("  Last error: \(error)")
