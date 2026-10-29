@@ -236,6 +236,17 @@ struct MTLCollectionParameterTests {
         #expect(output == "1:x")
     }
 
+    @Test("A typed let variable holds a single statement as the only element of a sequence")
+    @MainActor
+    func typedLetHoldsSingletonSequence() async throws {
+        let model = ActionModel()
+        let action = await model.makeAction()
+        let output = try await model.output(Self.header + """
+            [template main(a : p::Action)][let ss : Sequence(Statement) = a.statements->first()][ss.size()/]:[ss.first().text/][/let],[let names : Sequence(String) = a.names][names.size()/][/let][/template]
+            """, on: action)
+        #expect(output == "1:x,3")
+    }
+
     @Test("A single statement prefers any other overload to a sequence of statements")
     @MainActor
     func singleObjectPrefersDirectOverload() async throws {

@@ -559,7 +559,8 @@ public struct MTLLetStatement: MTLStatement {
     /// The variables are bound in order, so that later initialisers can refer
     /// to earlier variables. A variable that declares a type only accepts a
     /// value that conforms to it, as a template parameter does; `null`
-    /// conforms to every type.
+    /// conforms to every type. A variable of a collection type holds its
+    /// value as a collection, as a template parameter does.
     ///
     /// - Parameter context: The execution context.
     /// - Throws: ``MTLExecutionError/typeError(_:)`` if a value does not conform
@@ -579,7 +580,7 @@ public struct MTLLetStatement: MTLStatement {
                 throw MTLExecutionError.typeError(
                     "Variable '\(variable.name)' of type \(variable.type) cannot hold a value of type \(Swift.type(of: value))")
             }
-            context.setVariable(variable.name, value: value)
+            context.setVariable(variable.name, value: MTLTypeMatcher.boundValue(of: value, to: variable.type))
         }
 
         // Execute body
