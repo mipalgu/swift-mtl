@@ -81,7 +81,7 @@ struct MTLSupportTypesTests {
     func collectionMatching() {
         let sequence = EcoreValueArray([1, 2])
         #expect(MTLTypeMatcher.distance(of: sequence, to: "Sequence(Integer)") == 1)
-        #expect(MTLTypeMatcher.distance(of: sequence, to: "OrderedSet(ecore::EClass)") == 1)
+        #expect(MTLTypeMatcher.distance(of: sequence, to: "OrderedSet(ecore::EClass)") == nil)
         #expect(MTLTypeMatcher.distance(of: sequence, to: "Collection") == 1)
         #expect(MTLTypeMatcher.distance(of: "text", to: "Sequence(String)") == nil)
         #expect(MTLTypeMatcher.distance(of: sequence, to: "String") == nil)

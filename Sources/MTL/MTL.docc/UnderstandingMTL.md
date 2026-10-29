@@ -163,6 +163,17 @@ signatures are an error. Among the applicable overloads the one with the smalles
 type distance wins: an exact metaclass match costs 0, each supertype step adds 1, and
 `OclAny` or `null` cost a large amount. Ties go to the most derived module.
 
+A collection, such as the value of a many-valued feature, matches a collection type such
+as `Sequence(T)` when every element conforms to `T`; nested types such as
+`Sequence(Sequence(String))` are checked level by level. It costs 1 plus the cost of its
+least specific element, so `Sequence(Assignment)` is preferred to `Sequence(Statement)`
+for a collection of assignments, and any collection type is preferred to `OclAny`. A
+collection type without an element type, such as `Sequence`, accepts any collection for 1.
+An empty collection matches every collection type for 1, whatever its element type. A
+single model object also matches a collection type of its own type, as its only element,
+but less specifically than any other type. The same rules decide whether a value
+conforms to the declared type of a `let` variable.
+
 ### Extends and overriding
 
 A module that `extends` another inherits its public and protected templates and queries.

@@ -132,4 +132,48 @@ struct MTLTypedLetTests {
         let text = await strategy.getGeneratedFiles()[MTLTestSupport.standardOutput] ?? ""
         #expect(!text.contains("inside"))
     }
+
+    // MARK: - Element Types
+
+    @Test(
+        "A collection conforms to a collection type whose element type all its elements conform to",
+        arguments: [
+            ("Sequence(Real)", "Sequence{1, 2.5}", "2"),
+            ("OrderedSet(ecore::EString)", "OrderedSet{'a', 'b'}", "2"),
+            ("Sequence(Sequence(Integer))", "Sequence{Sequence{1}, Sequence{2, 3}}", "2"),
+            ("Sequence(Boolean)", "Sequence{}", "0"),
+            ("Sequence(OclAny)", "Sequence{1, 'a', true}", "3"),
+            ("Collection", "Sequence{1, 'a', true}", "3")
+        ])
+    @MainActor
+    func elementTypesConform(type: String, value: String, size: String) async throws {
+        let output = try await MTLTestSupport.output(Self.module("[let x : \(type) = \(value)][x->size()/][/let]"))
+        #expect(output == size)
+    }
+
+    @Test(
+        "A collection with an element that does not conform to the element type is a type error",
+        arguments: [
+            ("Sequence(String)", "Sequence{1}"),
+            ("Sequence(Integer)", "Sequence{1, 'a'}"),
+            ("OrderedSet(Integer)", "Sequence{1.5}"),
+            ("Sequence(Sequence(String))", "Sequence{Sequence{'a'}, Sequence{1}}"),
+            ("Sequence(Sequence(String))", "Sequence{'a'}")
+        ])
+    @MainActor
+    func elementTypeMismatch(type: String, value: String) async {
+        do {
+            _ = try await MTLTestSupport.output(Self.module("[let x : \(type) = \(value)][x/][/let]"))
+            Issue.record("Expected a type error for \(type) = \(value)")
+        } catch let error as MTLExecutionError {
+            guard case .typeError(let message) = error else {
+                Issue.record("Unexpected error \(error)")
+                return
+            }
+            #expect(message.contains("'x'"))
+            #expect(message.contains(type))
+        } catch {
+            Issue.record("Unexpected error \(error)")
+        }
+    }
 }

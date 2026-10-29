@@ -341,14 +341,14 @@ struct MTLCollectionParameterTests {
 
     // MARK: Type Matching
 
-    @Test("Arrays of values conform to collection types without their elements being checked")
+    @Test("Arrays of values conform to collection types only if their elements do")
     func matcherAcceptsArrays() {
         let distance = MTLTypeMatcher.collectionDistance
         #expect(MTLTypeMatcher.distance(of: ["a"], to: "Sequence(String)") == distance)
         #expect(MTLTypeMatcher.distance(of: [1], to: "OrderedSet(Integer)") == distance)
         #expect(MTLTypeMatcher.distance(of: [true], to: "Collection(Boolean)") == distance)
         #expect(MTLTypeMatcher.distance(of: ["a"], to: "Sequence") == distance)
-        #expect(MTLTypeMatcher.distance(of: [1], to: "Sequence(String)") == distance)
+        #expect(MTLTypeMatcher.distance(of: [1], to: "Sequence(String)") == nil)
         #expect(MTLTypeMatcher.distance(of: [String](), to: "Bag(Integer)") == distance)
         #expect(MTLTypeMatcher.distance(of: "abc", to: "Sequence(String)") == nil)
     }
