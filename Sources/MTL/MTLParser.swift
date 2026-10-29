@@ -1423,7 +1423,9 @@ final class MTLSyntaxParser {
         switch token.type {
         case .text(let textContent):
             advance()
-            return MTLTextStatement(value: textContent, origin: origin(from: start))
+            return MTLTextStatement(
+                value: textContent, followsClosingTagLine: endsClosingTagLine(text: token, at: start),
+                origin: origin(from: start))
 
         case .leftBracket:
             advance()
@@ -1514,6 +1516,28 @@ final class MTLSyntaxParser {
         return MTLExpressionStatement(
             expression: expr, followedByLineBreak: nextTextStartsWithLineBreak(),
             origin: origin(from: start))
+    }
+
+    /// Whether a text token starts with the line break that ends the line of a closing tag.
+    ///
+    /// The closing tag (`[/name]`) must directly precede the text in the source, so a line break
+    /// that only follows a closing tag because the tag's own line was removed by the standalone
+    /// line rule does not count.
+    ///
+    /// - Parameters:
+    ///   - text: The text token.
+    ///   - index: The position of the text token in the token stream.
+    /// - Returns: `true` if the text begins with the line break of a closing tag's line.
+    private func endsClosingTagLine(text: MTLToken, at index: Int) -> Bool {
+        let tagLength = 4
+        guard case .text(let value) = text.type, value.first?.isNewline == true,
+              index >= tagLength else { return false }
+        let tag = tokens[(index - tagLength)..<index]
+        return tag[tag.startIndex].type == .leftBracket
+            && tag[tag.startIndex + 1].type == .slash
+            && closingTagName(tag[tag.startIndex + 2]) != nil
+            && tag[tag.startIndex + 3].type == .rightBracket
+            && tag[tag.startIndex + 3].endOffset == text.offset
     }
 
     /// Whether the next token is text that begins with a line break.

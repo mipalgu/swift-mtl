@@ -92,21 +92,33 @@ public struct MTLTextStatement: MTLStatement {
     /// Whether a newline should be added after this text.
     public let newLineNeeded: Bool
 
+    /// Whether the text starts with the line break that ends the line of a block's closing tag.
+    ///
+    /// The enclosing ``MTLBlock`` does not duplicate such a line break: it is dropped when the
+    /// block that closes on that line wrote text ending in a line break. A block written on one
+    /// line, such as `[if (c)][call()/][/if]`, then adds no blank line after a call whose output
+    /// already ends a line, just as an expression tag on a line of its own adds none.
+    public let followsClosingTagLine: Bool
+
     /// Creates a new text statement.
     ///
     /// - Parameters:
     ///   - value: The literal text to output
     ///   - multiLines: Whether this text spans multiple lines (default: false)
     ///   - newLineNeeded: Whether to add a newline after the text (default: false)
+    ///   - followsClosingTagLine: Whether the text starts with the line break that ends the
+    ///     line of a block's closing tag (default: false)
     ///   - origin: Where the construct was written, if known (default: none).
     public init(
         value: String, multiLines: Bool = false, newLineNeeded: Bool = false,
+        followsClosingTagLine: Bool = false,
         origin: SourceOrigin = .init()
     ) {
         self.origin = origin
         self.value = value
         self.multiLines = multiLines
         self.newLineNeeded = newLineNeeded
+        self.followsClosingTagLine = followsClosingTagLine
     }
 
     @MainActor

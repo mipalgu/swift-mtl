@@ -207,6 +207,12 @@ done
 produces `- a`, `- b` and `done`, each followed by a line break. A block that shares its
 line with text, such as `[if (true)]a[/if]`, keeps the line break.
 
+A line break directly after an expression tag or a closing block tag is not duplicated. It
+is dropped when the expression, or the block that closes there, wrote text ending in a line
+break, so a template call such as `[helper()/]` or `[if (c)][helper()/][/if]` on a line of
+its own adds no blank line after the output of `helper`. An expression tag alone on its line
+that produces nothing produces no line.
+
 Text is otherwise emitted literally, as in Acceleo 3. Block bodies are not re-indented
 automatically. A multi-line result of an expression, for example from a template call,
 inherits the leading white space of the line on which the expression starts. A collection

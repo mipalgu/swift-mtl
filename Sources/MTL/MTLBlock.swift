@@ -86,6 +86,10 @@ public struct MTLBlock: Sendable, Equatable, Hashable {
     /// If the block is not inlined, indentation is pushed before execution
     /// and popped afterward. Statements are executed sequentially.
     ///
+    /// When a statement is followed by text that starts with the line break of its closing
+    /// tag's line (see ``MTLTextStatement/followsClosingTagLine``), that line break is dropped
+    /// if the statement wrote text ending in a line break, so that it is not duplicated.
+    ///
     /// - Parameter context: The execution context
     /// - Throws: `MTLExecutionError` if any statement execution fails
     @MainActor
@@ -101,10 +105,29 @@ public struct MTLBlock: Sendable, Equatable, Hashable {
         }
 
         try await context.checkpoint()
-        for statement in statements {
-            try await statement.execute(in: context)
+        for (index, statement) in statements.enumerated() {
+            if endsClosingTagLine(at: index) {
+                let lengthBefore = await context.outputLength
+                try await statement.execute(in: context)
+                if await context.outputLength > lengthBefore, !(await context.isMidLine) {
+                    context.absorbNextLineBreak(true)
+                }
+            } else {
+                try await statement.execute(in: context)
+            }
             try await context.checkpoint()
         }
+    }
+
+    /// Whether the statement at an index closes on a line whose line break the next statement starts with.
+    ///
+    /// - Parameter index: The index of a statement of ``statements``.
+    /// - Returns: `true` if the next statement is text that starts with the line break of the
+    ///   closing tag's line.
+    private func endsClosingTagLine(at index: Int) -> Bool {
+        let next = index + 1
+        guard next < statements.count, let text = statements[next] as? MTLTextStatement else { return false }
+        return text.followsClosingTagLine
     }
 
     // MARK: - Equatable
