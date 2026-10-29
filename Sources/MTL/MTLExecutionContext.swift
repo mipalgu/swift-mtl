@@ -223,8 +223,9 @@ public final class MTLExecutionContext: Sendable {
     ///   - generationStrategy: The output strategy for generated text.
     ///   - options: The behaviours that the context follows. Pass ``MTLOptions/standard`` for
     ///     the documented behaviour or ``MTLOptions/legacy`` for that of version 0.6. The
-    ///     ``MTLOptions/unsetFeatureReads`` apply to the execution engine this initialiser
-    ///     creates; a supplied `aqlContext` keeps the engine it already has.
+    ///     ``MTLOptions/aql`` and ``MTLOptions/unsetFeatureReads`` apply to the expression
+    ///     context and execution engine this initialiser creates; a supplied `aqlContext`
+    ///     keeps the options and engine it already has.
     ///   - aqlContext: The expression context to evaluate expressions in, or `nil` to create
     ///     one (default: `nil`).
     ///   - protectedAreaManager: The manager that preserves user code in protected areas, or
@@ -249,7 +250,7 @@ public final class MTLExecutionContext: Sendable {
             self.aqlContext = providedContext
         } else {
             let engine = ECoreExecutionEngine(models: [:], unsetFeatureReads: options.unsetFeatureReads)
-            self.aqlContext = AQLExecutionContext(executionEngine: engine)
+            self.aqlContext = AQLExecutionContext(executionEngine: engine, options: options.aql)
         }
 
         // Create initial stdout writer
@@ -270,6 +271,7 @@ public final class MTLExecutionContext: Sendable {
     /// Creates a new MTL execution context with the behaviour of version 0.6.
     ///
     /// The context follows ``MTLOptions/legacy``, with the given way of reading unset features.
+    /// A context that this initialiser creates for expressions follows `AQLOptions/legacy`.
     ///
     /// - Parameters:
     ///   - module: The MTL module to execute

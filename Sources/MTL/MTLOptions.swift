@@ -6,6 +6,7 @@
 //  Copyright (c) 2026 Rene Hexel. All rights reserved.
 //
 
+import AQL
 import ECore
 
 /// The behaviours that a generator or an execution context follows.
@@ -26,6 +27,13 @@ import ECore
 /// let generator = MTLGenerator(module: module, generationStrategy: strategy, options: options)
 /// ```
 public struct MTLOptions: Sendable, Equatable, Hashable {
+    /// The behaviours of the expression language that templates use.
+    ///
+    /// The default, `AQLOptions/standard`, gives the behaviour of this release of swift-aql,
+    /// and `AQLOptions/legacy` that of version 0.6. The options apply to the expression
+    /// context that an initialiser creates.
+    public var aql: AQLOptions
+
     /// What happens to the line break after the closing tag of a block written on one line.
     ///
     /// The default, ``MTLBlockLineBreaks/acceleo``, drops it when the line is empty once the
@@ -69,6 +77,8 @@ public struct MTLOptions: Sendable, Equatable, Hashable {
     /// Creates options, by default with the behaviour documented for this release.
     ///
     /// - Parameters:
+    ///   - aql: The behaviours of the expression language that templates use
+    ///     (default: `AQLOptions/standard`).
     ///   - blockLineBreaks: What happens to the line break after the closing tag of a block
     ///     written on one line (default: ``MTLBlockLineBreaks/acceleo``).
     ///   - collectionParameters: Which arguments conform to a collection type and what a
@@ -82,6 +92,7 @@ public struct MTLOptions: Sendable, Equatable, Hashable {
     ///   - unsetFeatureReads: How templates read structural features that have not been set
     ///     (default: `UnsetFeatureReads/defaults`).
     public init(
+        aql: AQLOptions = .standard,
         blockLineBreaks: MTLBlockLineBreaks = .acceleo,
         collectionParameters: MTLCollectionParameters = .conforming,
         checksLetTypes: Bool = true,
@@ -89,6 +100,7 @@ public struct MTLOptions: Sendable, Equatable, Hashable {
         cachesContainers: Bool = true,
         unsetFeatureReads: UnsetFeatureReads = .defaults
     ) {
+        self.aql = aql
         self.blockLineBreaks = blockLineBreaks
         self.collectionParameters = collectionParameters
         self.checksLetTypes = checksLetTypes
@@ -104,10 +116,12 @@ public struct MTLOptions: Sendable, Equatable, Hashable {
 
     /// The behaviour of version 0.6.
     ///
-    /// Line breaks after blocks written on one line are kept, collection types are matched as
-    /// in version 0.6, declared `let` types are not checked, and containers are looked up
-    /// afresh every time. Unset features read as their defaults.
+    /// The expression language follows `AQLOptions/legacy`, line breaks after blocks written
+    /// on one line are kept, collection types are matched as in version 0.6, declared `let`
+    /// types are not checked, and containers are looked up afresh every time. Unset features
+    /// read as their defaults.
     public static let legacy = MTLOptions(
+        aql: .legacy,
         blockLineBreaks: .kept,
         collectionParameters: .exact,
         checksLetTypes: false,
@@ -125,7 +139,7 @@ public struct MTLOptions: Sendable, Equatable, Hashable {
 ///
 /// The raw value of each case is a lower-case word that can double as a command-line spelling,
 /// so that a tool can parse an option with ``init(rawValue:)`` and list the accepted spellings
-/// through ``allCases``.
+/// through `allCases`.
 public enum MTLBlockLineBreaks: String, Sendable, CaseIterable, Hashable {
     /// The line break is dropped when the line is empty once the block has run, as in Acceleo 4.
     ///
@@ -146,7 +160,7 @@ public enum MTLBlockLineBreaks: String, Sendable, CaseIterable, Hashable {
 ///
 /// The raw value of each case is a lower-case word that can double as a command-line spelling,
 /// so that a tool can parse an option with ``init(rawValue:)`` and list the accepted spellings
-/// through ``allCases``.
+/// through `allCases`.
 public enum MTLCollectionParameters: String, Sendable, CaseIterable, Hashable {
     /// Any collection conforms if its elements conform to the element type.
     ///

@@ -17,7 +17,7 @@
 ///
 /// The raw value of each case is a lower-case word that can double as a command-line spelling,
 /// so that a tool can parse an option with ``init(rawValue:)`` and list the accepted spellings
-/// through ``allCases``.
+/// through `allCases`.
 public enum MTLLetTypeMismatches: String, Sendable, CaseIterable, Hashable {
     /// A mismatch is a type error that stops the generation.
     ///

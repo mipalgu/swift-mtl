@@ -10,6 +10,7 @@ import ECore
 import EMFBase
 import Testing
 
+@testable import AQL
 @testable import MTL
 
 /// Tests for the options that select between the standard behaviour and that of version 0.6.
@@ -34,6 +35,7 @@ struct MTLOptionsTests {
     func defaults() {
         let options = MTLOptions()
         #expect(options == .standard)
+        #expect(options.aql == .standard)
         #expect(options.blockLineBreaks == .acceleo)
         #expect(options.collectionParameters == .conforming)
         #expect(options.checksLetTypes)
@@ -46,6 +48,7 @@ struct MTLOptionsTests {
     func legacy() {
         let options = MTLOptions.legacy
         #expect(options != .standard)
+        #expect(options.aql == .legacy)
         #expect(options.blockLineBreaks == .kept)
         #expect(options.collectionParameters == .exact)
         #expect(!options.checksLetTypes)
@@ -115,6 +118,45 @@ struct MTLOptionsTests {
         let context = MTLExecutionContext(
             module: module, generationStrategy: MTLInMemoryStrategy(), options: .standard)
         #expect(context.options == .standard)
+        #expect(context.aqlContext.options == .standard)
+    }
+
+    @Test("Execution contexts evaluate expressions with the options of the expression language")
+    func contextExpressionOptions() async throws {
+        let module = try await MTLTestSupport.parse(Self.module("a"))
+        let legacy = MTLExecutionContext(module: module, generationStrategy: MTLInMemoryStrategy())
+        #expect(legacy.aqlContext.options == .legacy)
+        var options = MTLOptions.standard
+        options.aql.collectionArguments = .firstElement
+        let mixed = MTLExecutionContext(module: module, generationStrategy: MTLInMemoryStrategy(), options: options)
+        #expect(mixed.aqlContext.options.collectionArguments == .firstElement)
+        #expect(mixed.aqlContext.options.collectionKinds == .distinguished)
+    }
+
+    @Test("A supplied expression context keeps its own options")
+    func suppliedExpressionContext() async throws {
+        let module = try await MTLTestSupport.parse(Self.module("a"))
+        let aqlContext = AQLExecutionContext(
+            executionEngine: ECoreExecutionEngine(models: [:]), options: .legacy)
+        let context = MTLExecutionContext(
+            module: module, generationStrategy: MTLInMemoryStrategy(), options: .standard, aqlContext: aqlContext)
+        #expect(context.aqlContext.options == .legacy)
+    }
+
+    // MARK: - Expression Language
+
+    @Test(
+        "Templates evaluate expressions with the options of the expression language",
+        arguments: [
+            ("[Sequence{'a'}->append(Sequence{'b', 'c'})->size()/]", "2", "2"),
+            ("[OrderedSet{'a', 'b', 'c'}->append('b')/]", "acb", "abcb"),
+            ("['a'->including('a')->size()/]", "1", "2"),
+        ])
+    func expressionOptions(expression: String, standard: String, legacy: String) async throws {
+        let source = Self.module(expression)
+        #expect(try await MTLTestSupport.output(source, options: .standard) == standard + "\n")
+        #expect(try await MTLTestSupport.output(source, options: MTLOptions(aql: .legacy)) == legacy + "\n")
+        #expect(try await MTLTestSupport.output(source) == legacy + "\n")
     }
 
     // MARK: - Block Line Breaks
