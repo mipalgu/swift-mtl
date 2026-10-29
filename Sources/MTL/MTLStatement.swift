@@ -108,12 +108,28 @@ public struct MTLTextStatement: MTLStatement {
     ///   - value: The literal text to output
     ///   - multiLines: Whether this text spans multiple lines (default: false)
     ///   - newLineNeeded: Whether to add a newline after the text (default: false)
-    ///   - followsClosingTagLine: Whether the text starts with the line break that ends the
-    ///     line of a block's closing tag (default: false)
     ///   - origin: Where the construct was written, if known (default: none).
     public init(
         value: String, multiLines: Bool = false, newLineNeeded: Bool = false,
-        followsClosingTagLine: Bool = false,
+        origin: SourceOrigin = .init()
+    ) {
+        self.init(
+            value: value, multiLines: multiLines, newLineNeeded: newLineNeeded,
+            followsClosingTagLine: false, origin: origin)
+    }
+
+    /// Creates a new text statement that may follow the line of a block's closing tag.
+    ///
+    /// - Parameters:
+    ///   - value: The literal text to output
+    ///   - multiLines: Whether this text spans multiple lines (default: false)
+    ///   - newLineNeeded: Whether to add a newline after the text (default: false)
+    ///   - followsClosingTagLine: Whether the text starts with the line break that ends the
+    ///     line of a block's closing tag
+    ///   - origin: Where the construct was written, if known (default: none).
+    public init(
+        value: String, multiLines: Bool = false, newLineNeeded: Bool = false,
+        followsClosingTagLine: Bool,
         origin: SourceOrigin = .init()
     ) {
         self.origin = origin
