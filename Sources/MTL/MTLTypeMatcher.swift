@@ -40,6 +40,11 @@ import Foundation
 /// than to any other type, because a many-valued feature with just one element
 /// may hold that element on its own. This does not apply to the elements of a
 /// collection matched against a nested collection type.
+///
+/// All of this applies with ``MTLCollectionParameters/conforming``. With
+/// ``MTLCollectionParameters/exact``, only a collection value of the expression
+/// language conforms to a collection type, with the collection distance and
+/// whatever its elements, and a parameter holds its argument unchanged.
 enum MTLTypeMatcher {
 
     /// The score of a match against a type that every value conforms to.
@@ -68,14 +73,37 @@ enum MTLTypeMatcher {
         "EDouble": "Real", "EFloat": "Real", "EDoubleObject": "Real"
     ]
 
-    /// Scores how well a value matches a declared type.
+    /// Scores how well a value matches a declared type when collections conform by their elements.
     ///
     /// - Parameters:
     ///   - value: The runtime value; `nil` stands for null, which matches every type.
     ///   - declaredType: The declared type, such as `String`, `ecore::EClass`, or `Sequence(EClass)`.
     /// - Returns: The distance (lower is more specific), or `nil` if the value does not conform.
     static func distance(of value: (any EcoreValue)?, to declaredType: String) -> Int? {
-        distance(of: value, toSimpleType: simpleName(of: declaredType), acceptingSingleton: true)
+        distance(of: value, to: declaredType, collectionParameters: .conforming)
+    }
+
+    /// Scores how well a value matches a declared type.
+    ///
+    /// - Parameters:
+    ///   - value: The runtime value; `nil` stands for null, which matches every type.
+    ///   - declaredType: The declared type, such as `String`, `ecore::EClass`, or `Sequence(EClass)`.
+    ///   - collectionParameters: Which values conform to a collection type.
+    /// - Returns: The distance (lower is more specific), or `nil` if the value does not conform.
+    static func distance(
+        of value: (any EcoreValue)?, to declaredType: String, collectionParameters: MTLCollectionParameters
+    ) -> Int? {
+        let type = simpleName(of: declaredType)
+        switch collectionParameters {
+        case .conforming:
+            return distance(of: value, toSimpleType: type, acceptingSingleton: true)
+        case .exact:
+            if type != MTLSyntax.anyType, let value, let head = collectionHead(of: type) {
+                guard MTLSyntax.collectionTypeNames.contains(head) else { return nil }
+                return value is EcoreValueArray ? collectionDistance : nil
+            }
+            return distance(of: value, toSimpleType: type, acceptingSingleton: false)
+        }
     }
 
     /// Scores how well a value matches a type without package qualification.
@@ -193,7 +221,8 @@ enum MTLTypeMatcher {
         return greatest
     }
 
-    /// The value that a parameter of a declared type holds for an argument.
+    /// The value that a parameter of a declared type holds for an argument when collections
+    /// conform by their elements.
     ///
     /// For a collection type, a collection becomes a collection value and a single value
     /// becomes the only element of one. Other values are held unchanged.
@@ -203,7 +232,24 @@ enum MTLTypeMatcher {
     ///   - declaredType: The declared type of the parameter.
     /// - Returns: The value of the parameter, or `nil` for null.
     static func boundValue(of value: (any EcoreValue)?, to declaredType: String) -> (any EcoreValue)? {
-        guard let value, !(value is EcoreValueArray),
+        boundValue(of: value, to: declaredType, collectionParameters: .conforming)
+    }
+
+    /// The value that a parameter of a declared type holds for an argument.
+    ///
+    /// With ``MTLCollectionParameters/conforming``, for a collection type, a collection becomes
+    /// a collection value and a single value becomes the only element of one. Other values,
+    /// and every value with ``MTLCollectionParameters/exact``, are held unchanged.
+    ///
+    /// - Parameters:
+    ///   - value: The argument, which conforms to the declared type.
+    ///   - declaredType: The declared type of the parameter.
+    ///   - collectionParameters: What a collection-typed parameter holds.
+    /// - Returns: The value of the parameter, or `nil` for null.
+    static func boundValue(
+        of value: (any EcoreValue)?, to declaredType: String, collectionParameters: MTLCollectionParameters
+    ) -> (any EcoreValue)? {
+        guard collectionParameters == .conforming, let value, !(value is EcoreValueArray),
               let head = collectionHead(of: simpleName(of: declaredType)),
               MTLSyntax.collectionTypeNames.contains(head) else { return value }
         return AQLValues.collection(AQLValues.coerceToCollection(value))

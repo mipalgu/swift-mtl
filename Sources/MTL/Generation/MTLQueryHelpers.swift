@@ -31,29 +31,64 @@ public struct MTLQueryHelper: Sendable {
     /// The number of arguments the query takes, including the receiver.
     public var arity: Int { parameterTypes.count }
 
+    /// Which arguments conform to the collection types among ``parameterTypes``.
+    ///
+    /// ``MTLQueryHelpers/call(_:arguments:among:)`` matches the arguments against the parameter
+    /// types of the helper in this way, as a generator with the same
+    /// ``MTLOptions/collectionParameters`` would.
+    public let collectionParameters: MTLCollectionParameters
+
     /// Runs the query.
     ///
     /// The closure takes the receiver followed by the remaining arguments, and throws
     /// ``MTLExecutionError`` if the number of arguments differs from ``arity`` or the query fails.
     public let call: @MainActor @Sendable ([(any EcoreValue)?]) async throws -> (any EcoreValue)?
 
-    /// Creates a helper.
+    /// Creates a helper that matches collection arguments as described.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the query.
+    ///   - parameterTypes: The declared parameter types, receiver first.
+    ///   - returnType: The declared return type.
+    ///   - collectionParameters: Which arguments conform to the collection types among the
+    ///     parameter types. See ``collectionParameters``.
+    ///   - call: The function that runs the query.
+    public init(
+        name: String,
+        parameterTypes: [String],
+        returnType: String,
+        collectionParameters: MTLCollectionParameters,
+        call: @escaping @MainActor @Sendable ([(any EcoreValue)?]) async throws -> (any EcoreValue)?
+    ) {
+        self.name = name
+        self.parameterTypes = parameterTypes
+        self.returnType = returnType
+        self.collectionParameters = collectionParameters
+        self.call = call
+    }
+
+    /// Creates a helper that matches collection arguments as version 0.6 did.
+    ///
+    /// The helper has ``MTLCollectionParameters/exact`` as its ``collectionParameters``.
     ///
     /// - Parameters:
     ///   - name: The name of the query.
     ///   - parameterTypes: The declared parameter types, receiver first.
     ///   - returnType: The declared return type.
     ///   - call: The function that runs the query.
+    @available(
+        *, deprecated,
+        message: "Use init(name:parameterTypes:returnType:collectionParameters:call:); pass collectionParameters: .exact to keep the behaviour of version 0.6"
+    )
     public init(
         name: String,
         parameterTypes: [String],
         returnType: String,
         call: @escaping @MainActor @Sendable ([(any EcoreValue)?]) async throws -> (any EcoreValue)?
     ) {
-        self.name = name
-        self.parameterTypes = parameterTypes
-        self.returnType = returnType
-        self.call = call
+        self.init(
+            name: name, parameterTypes: parameterTypes, returnType: returnType,
+            collectionParameters: .exact, call: call)
     }
 }
 
@@ -65,7 +100,7 @@ public struct MTLQueryHelper: Sendable {
 ///
 /// ```swift
 /// let module = try await MTLParser(searchPaths: libraries).parse(url)
-/// let helpers = MTLQueryHelpers.helpers(for: module)
+/// let helpers = MTLQueryHelpers.helpers(for: module, options: .standard)
 /// let text = try await MTLQueryHelpers.call("render", arguments: [element, "c"], among: helpers)
 /// ```
 public enum MTLQueryHelpers {
@@ -79,12 +114,53 @@ public enum MTLQueryHelpers {
     /// - Parameters:
     ///   - module: The module whose queries are exposed.
     ///   - generator: The generator that runs the queries, or `nil` to use a new generator for
-    ///     the module that discards any generated text. Pass a generator to share its global
-    ///     variables and services, such as ``MTLParameterServices``, with the queries.
-    /// - Returns: One helper per query, in declaration order.
+    ///     the module with the options of version 0.6 (``MTLOptions/legacy``) that discards any
+    ///     generated text. Pass a generator to share its options, global variables and services,
+    ///     such as ``MTLParameterServices``, with the queries.
+    /// - Returns: One helper per query, in declaration order, with the
+    ///   ``MTLOptions/collectionParameters`` of the generator.
     @MainActor
     public static func helpers(for module: MTLModule, generator: MTLGenerator? = nil) -> [MTLQueryHelper] {
-        let runner = generator ?? MTLGenerator(module: module, generationStrategy: MTLInMemoryStrategy())
+        helpers(for: module, runner: generator ?? runner(for: module, options: .legacy))
+    }
+
+    /// Lists the queries of a module and of its imported modules as helpers that follow the given options.
+    ///
+    /// All queries of the module itself are listed, overloads included, followed by the public
+    /// queries of each imported module. Queries run on a new generator for the module that
+    /// discards any generated text, so queries of the module can call each other and the
+    /// queries that it imports.
+    ///
+    /// - Parameters:
+    ///   - module: The module whose queries are exposed.
+    ///   - options: The options of the generator that runs the queries. Pass
+    ///     ``MTLOptions/standard`` for the documented behaviour.
+    /// - Returns: One helper per query, in declaration order.
+    @MainActor
+    public static func helpers(for module: MTLModule, options: MTLOptions) -> [MTLQueryHelper] {
+        helpers(for: module, runner: runner(for: module, options: options))
+    }
+
+    /// A generator for running the queries of a module that discards any generated text.
+    ///
+    /// - Parameters:
+    ///   - module: The module whose queries are run.
+    ///   - options: The options of the generator.
+    /// - Returns: The generator.
+    @MainActor
+    private static func runner(for module: MTLModule, options: MTLOptions) -> MTLGenerator {
+        MTLGenerator(module: module, generationStrategy: MTLInMemoryStrategy(), options: options)
+    }
+
+    /// Lists the queries of a module and of its imported modules as helpers run by a generator.
+    ///
+    /// - Parameters:
+    ///   - module: The module whose queries are exposed.
+    ///   - runner: The generator that runs the queries.
+    /// - Returns: One helper per query, in declaration order.
+    @MainActor
+    private static func helpers(for module: MTLModule, runner: MTLGenerator) -> [MTLQueryHelper] {
+        let collectionParameters = runner.options.collectionParameters
         var queries = allQueries(of: module)
         for imported in module.importedModules {
             queries += allQueries(of: imported).filter { $0.visibility == .public }
@@ -93,7 +169,8 @@ public enum MTLQueryHelpers {
             MTLQueryHelper(
                 name: query.name,
                 parameterTypes: query.parameters.map(\.type),
-                returnType: query.returnType
+                returnType: query.returnType,
+                collectionParameters: collectionParameters
             ) { arguments in
                 try await runner.executeQuery(query, arguments: arguments)
             }
@@ -103,7 +180,8 @@ public enum MTLQueryHelpers {
     /// Calls the helper that best fits a name and arguments.
     ///
     /// Among helpers of the same name and arity, the one whose parameter types match the
-    /// arguments most specifically is called.
+    /// arguments most specifically is called. Each helper matches collection arguments as its
+    /// ``MTLQueryHelper/collectionParameters`` describes.
     ///
     /// - Parameters:
     ///   - name: The query name.
@@ -130,7 +208,9 @@ public enum MTLQueryHelpers {
             var total = 0
             var fits = true
             for (argument, type) in zip(arguments, helper.parameterTypes) {
-                guard let distance = MTLTypeMatcher.distance(of: argument, to: type) else {
+                guard let distance = MTLTypeMatcher.distance(
+                    of: argument, to: type, collectionParameters: helper.collectionParameters)
+                else {
                     fits = false
                     break
                 }
@@ -162,7 +242,7 @@ public enum MTLQueryHelpers {
 /// ## Example
 ///
 /// ```swift
-/// let services = MTLQueryServices(module: module)
+/// let services = MTLQueryServices(module: module, options: .standard)
 /// ```
 public struct MTLQueryServices: AQLServiceProvider {
     /// The helpers that the services call.
@@ -172,11 +252,23 @@ public struct MTLQueryServices: AQLServiceProvider {
     ///
     /// - Parameters:
     ///   - module: The module whose queries are offered.
-    ///   - generator: The generator that runs the queries, or `nil` for a new generator that
-    ///     discards generated text; see ``MTLQueryHelpers/helpers(for:generator:)``.
+    ///   - generator: The generator that runs the queries, or `nil` for a new generator with
+    ///     the options of version 0.6 that discards generated text; see
+    ///     ``MTLQueryHelpers/helpers(for:generator:)``.
     @MainActor
     public init(module: MTLModule, generator: MTLGenerator? = nil) {
         self.helpers = MTLQueryHelpers.helpers(for: module, generator: generator)
+    }
+
+    /// Creates the services for a module and its imports that follow the given options.
+    ///
+    /// - Parameters:
+    ///   - module: The module whose queries are offered.
+    ///   - options: The options of the new generator that runs the queries and discards
+    ///     generated text; see ``MTLQueryHelpers/helpers(for:options:)``.
+    @MainActor
+    public init(module: MTLModule, options: MTLOptions) {
+        self.helpers = MTLQueryHelpers.helpers(for: module, options: options)
     }
 
     /// The services offered: one standalone and one receiver form per query name and arity.

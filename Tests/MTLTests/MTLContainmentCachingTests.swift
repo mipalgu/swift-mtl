@@ -79,12 +79,13 @@ private struct ContainmentProbeServices: AQLServiceProvider {
 @MainActor
 struct MTLContainmentCachingTests {
     private func generate(
-        _ source: String, model: TwoParentModel, generator existing: MTLGenerator? = nil
+        _ source: String, model: TwoParentModel, generator existing: MTLGenerator? = nil,
+        options: MTLOptions = .standard
     ) async throws -> (String, MTLGenerator) {
         let module = try await MTLTestSupport.parse(source)
         let strategy = MTLInMemoryStrategy()
         let generator = existing ?? MTLGenerator(
-            module: module, generationStrategy: strategy,
+            module: module, generationStrategy: strategy, options: options,
             serviceProviders: [ContainmentProbeServices(model: model)])
         try await generator.generate(
             mainTemplate: "main", arguments: [model.child], models: ["m": model.resource])
@@ -121,12 +122,12 @@ struct MTLContainmentCachingTests {
             """
         let module = try await MTLTestSupport.parse(source)
         let strategy = MTLInMemoryStrategy()
-        let generator = MTLGenerator(module: module, generationStrategy: strategy)
+        let generator = MTLGenerator(module: module, generationStrategy: strategy, options: .standard)
         try await generator.generate(mainTemplate: "main", arguments: [model.child], models: ["m": model.resource])
         #expect(await strategy.getGeneratedFiles()[MTLTestSupport.standardOutput] == "first")
         await model.moveChild()
         let second = MTLInMemoryStrategy()
-        let rerun = MTLGenerator(module: module, generationStrategy: second)
+        let rerun = MTLGenerator(module: module, generationStrategy: second, options: .standard)
         try await rerun.generate(mainTemplate: "main", arguments: [model.child], models: ["m": model.resource])
         #expect(await second.getGeneratedFiles()[MTLTestSupport.standardOutput] == "second")
         try await generator.generate(mainTemplate: "main", arguments: [model.child], models: ["m": model.resource])
@@ -141,11 +142,33 @@ struct MTLContainmentCachingTests {
             [template main(o : OclAny)][parentName(o)/][/template]
             [query public parentName(o : OclAny) : String = o.eContainer().name/]
             """)
-        let generator = MTLGenerator(module: module, generationStrategy: MTLInMemoryStrategy())
+        let generator = MTLGenerator(module: module, generationStrategy: MTLInMemoryStrategy(), options: .standard)
         try await generator.generate(mainTemplate: "main", arguments: [model.child], models: ["m": model.resource])
         await model.moveChild()
         let helpers = MTLQueryHelpers.helpers(for: module, generator: generator)
         let result = try await MTLQueryHelpers.call("parentName", arguments: [model.child], among: helpers)
         #expect(result as? String == "second")
+    }
+
+    @Test("Generation without container caching looks up containers afresh", arguments: [false, true])
+    func generationWithoutCaching(legacy: Bool) async throws {
+        let model = await TwoParentModel()
+        var options = legacy ? MTLOptions.legacy : MTLOptions()
+        options.cachesContainers = false
+        let (output, _) = try await generate("""
+            [module m('u')/]
+            [template main(o : OclAny)][for (i : Integer | Sequence{1, 2})][o.eContainer().name/],[o.ancestors()->size()/];[/for][cachesIndex()/][/template]
+            """, model: model, options: options)
+        #expect(output == "first,2;first,2;false")
+    }
+
+    @Test("A model changed during generation without container caching is seen at once")
+    func changesWithoutCaching() async throws {
+        let model = await TwoParentModel()
+        let (output, _) = try await generate("""
+            [module m('u')/]
+            [template main(o : OclAny)][o.eContainer().name/][moveChild()/],[o.eContainer().name/][/template]
+            """, model: model, options: .legacy)
+        #expect(output == "first,second")
     }
 }

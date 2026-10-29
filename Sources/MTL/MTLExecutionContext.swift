@@ -66,7 +66,8 @@ import OCL
 /// let strategy = MTLInMemoryStrategy()
 /// let context = MTLExecutionContext(
 ///     module: module,
-///     generationStrategy: strategy
+///     generationStrategy: strategy,
+///     options: .standard
 /// )
 ///
 /// // Register models
@@ -198,12 +199,11 @@ public final class MTLExecutionContext: Sendable {
     /// execution state and decisions.
     public var debug: Bool = false
 
-    /// How `let` blocks treat a value that does not conform to the declared type of its variable.
+    /// The behaviours that the context follows.
     ///
-    /// With ``MTLLetTypeMismatches/error``, the default, a mismatch is a type error. With
-    /// ``MTLLetTypeMismatches/skip`` the body of the block is skipped and a warning is recorded
-    /// in ``warnings``.
-    public let letTypeMismatches: MTLLetTypeMismatches
+    /// See ``MTLOptions`` for the behaviours and their defaults. An execution context created
+    /// without options follows ``MTLOptions/legacy``.
+    public let options: MTLOptions
 
     /// The distinct warnings of the current run, in the order in which they were first reported.
     ///
@@ -216,33 +216,31 @@ public final class MTLExecutionContext: Sendable {
 
     // MARK: - Initialisation
 
-    /// Creates a new MTL execution context.
+    /// Creates a new MTL execution context with the given options.
     ///
     /// - Parameters:
-    ///   - module: The MTL module to execute
-    ///   - generationStrategy: The output strategy for generated text
-    ///   - aqlContext: Optional AQL context (default: creates new one)
-    ///   - protectedAreaManager: Optional protected area manager for preserving user code
+    ///   - module: The MTL module to execute.
+    ///   - generationStrategy: The output strategy for generated text.
+    ///   - options: The behaviours that the context follows. Pass ``MTLOptions/standard`` for
+    ///     the documented behaviour or ``MTLOptions/legacy`` for that of version 0.6. The
+    ///     ``MTLOptions/unsetFeatureReads`` apply to the execution engine this initialiser
+    ///     creates; a supplied `aqlContext` keeps the engine it already has.
+    ///   - aqlContext: The expression context to evaluate expressions in, or `nil` to create
+    ///     one (default: `nil`).
+    ///   - protectedAreaManager: The manager that preserves user code in protected areas, or
+    ///     `nil` to create one (default: `nil`).
     ///   - serviceProviders: AQL service providers to register (default: none). Later
     ///     providers take precedence over earlier ones. See ``register(_:)``.
-    ///   - unsetFeatureReads: How templates read structural features that have not been set
-    ///     (default: ``UnsetFeatureReads/defaults``, as the Eclipse Modeling Framework does).
-    ///     The mode applies to the execution engine this initialiser creates; a supplied
-    ///     `aqlContext` keeps the engine it already has.
-    ///   - letTypeMismatches: How `let` blocks treat a value that does not conform to the
-    ///     declared type of its variable (default: ``MTLLetTypeMismatches/error``).
-    ///     See ``letTypeMismatches``.
     public init(
         module: MTLModule,
         generationStrategy: any MTLGenerationStrategy,
+        options: MTLOptions,
         aqlContext: AQLExecutionContext? = nil,
         protectedAreaManager: MTLProtectedAreaManager? = nil,
-        serviceProviders: [any AQLServiceProvider] = [],
-        unsetFeatureReads: UnsetFeatureReads = .defaults,
-        letTypeMismatches: MTLLetTypeMismatches = .error
+        serviceProviders: [any AQLServiceProvider] = []
     ) {
         self.module = module
-        self.letTypeMismatches = letTypeMismatches
+        self.options = options
         self.generationStrategy = generationStrategy
         self.protectedAreaManager = protectedAreaManager ?? MTLProtectedAreaManager()
 
@@ -250,7 +248,7 @@ public final class MTLExecutionContext: Sendable {
         if let providedContext = aqlContext {
             self.aqlContext = providedContext
         } else {
-            let engine = ECoreExecutionEngine(models: [:], unsetFeatureReads: unsetFeatureReads)
+            let engine = ECoreExecutionEngine(models: [:], unsetFeatureReads: options.unsetFeatureReads)
             self.aqlContext = AQLExecutionContext(executionEngine: engine)
         }
 
@@ -267,6 +265,41 @@ public final class MTLExecutionContext: Sendable {
         for provider in serviceProviders {
             self.aqlContext.register(provider)
         }
+    }
+
+    /// Creates a new MTL execution context with the behaviour of version 0.6.
+    ///
+    /// The context follows ``MTLOptions/legacy``, with the given way of reading unset features.
+    ///
+    /// - Parameters:
+    ///   - module: The MTL module to execute
+    ///   - generationStrategy: The output strategy for generated text
+    ///   - aqlContext: Optional AQL context (default: creates new one)
+    ///   - protectedAreaManager: Optional protected area manager for preserving user code
+    ///   - serviceProviders: AQL service providers to register (default: none). Later
+    ///     providers take precedence over earlier ones. See ``register(_:)``.
+    ///   - unsetFeatureReads: How templates read structural features that have not been set
+    ///     (default: ``UnsetFeatureReads/defaults``, as the Eclipse Modeling Framework does).
+    ///     The mode applies to the execution engine this initialiser creates; a supplied
+    ///     `aqlContext` keeps the engine it already has.
+    @available(
+        *, deprecated,
+        message: "Use init(module:generationStrategy:options:aqlContext:protectedAreaManager:serviceProviders:); pass options: .legacy to keep the behaviour of version 0.6"
+    )
+    public convenience init(
+        module: MTLModule,
+        generationStrategy: any MTLGenerationStrategy,
+        aqlContext: AQLExecutionContext? = nil,
+        protectedAreaManager: MTLProtectedAreaManager? = nil,
+        serviceProviders: [any AQLServiceProvider] = [],
+        unsetFeatureReads: UnsetFeatureReads = .defaults
+    ) {
+        var options = MTLOptions.legacy
+        options.unsetFeatureReads = unsetFeatureReads
+        self.init(
+            module: module, generationStrategy: generationStrategy, options: options,
+            aqlContext: aqlContext, protectedAreaManager: protectedAreaManager,
+            serviceProviders: serviceProviders)
     }
 
     // MARK: - Containment Caching

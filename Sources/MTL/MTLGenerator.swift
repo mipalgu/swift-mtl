@@ -49,7 +49,7 @@ import OrderedCollections
 ///
 /// // Create generator
 /// let strategy = MTLInMemoryStrategy()
-/// let generator = MTLGenerator(module: module, generationStrategy: strategy)
+/// let generator = MTLGenerator(module: module, generationStrategy: strategy, options: .standard)
 ///
 /// // Register models
 /// var models: [String: Resource] = [:]
@@ -131,20 +131,56 @@ public final class MTLGenerator {
     /// With ``UnsetFeatureReads/defaults``, the default, an unset attribute reads as its
     /// declared or data type default and an unset many-valued feature as an empty collection,
     /// as in the Eclipse Modeling Framework. With ``UnsetFeatureReads/undefined`` an unset
-    /// feature reads as `nil`, which `[expression/]` prints as nothing.
+    /// feature reads as `nil`, which `[expression/]` prints as nothing. This is the
+    /// ``MTLOptions/unsetFeatureReads`` of ``options``.
     public let unsetFeatureReads: UnsetFeatureReads
 
-    /// How `let` blocks treat a value that does not conform to the declared type of its variable.
+    /// The behaviours that the generator follows.
     ///
-    /// With ``MTLLetTypeMismatches/error``, the default, a mismatch is a type error that stops
-    /// the generation. With ``MTLLetTypeMismatches/skip`` the body of the block is skipped, as
-    /// in Acceleo 3, and a warning is recorded in the ``MTLGenerationStatistics/warnings`` of
-    /// ``statistics``.
-    public let letTypeMismatches: MTLLetTypeMismatches
+    /// See ``MTLOptions`` for the behaviours and their defaults. A generator created without
+    /// options follows ``MTLOptions/legacy``.
+    public let options: MTLOptions
 
     // MARK: - Initialisation
 
-    /// Creates a new MTL generator for the specified module.
+    /// Creates a new MTL generator for the specified module with the given options.
+    ///
+    /// - Parameters:
+    ///   - module: The MTL module to execute.
+    ///   - generationStrategy: The output strategy for generated text.
+    ///   - options: The behaviours that the generator follows. Pass ``MTLOptions/standard``
+    ///     for the documented behaviour or ``MTLOptions/legacy`` for that of version 0.6.
+    ///   - serviceProviders: AQL service providers made available to the templates
+    ///     (default: none). Later providers take precedence over earlier ones; the
+    ///     templates, queries and macros of the module always take precedence over
+    ///     services of the same name.
+    ///   - globals: Global variables visible to every template, query and macro
+    ///     (default: none). See ``setGlobalVariable(_:value:)`` for the precedence rules.
+    public init(
+        module: MTLModule,
+        generationStrategy: any MTLGenerationStrategy,
+        options: MTLOptions,
+        serviceProviders: [any AQLServiceProvider] = [],
+        globals: [String: (any EcoreValue)?] = [:]
+    ) {
+        self.module = module
+        self.options = options
+        self.unsetFeatureReads = options.unsetFeatureReads
+        self.executionContext = MTLExecutionContext(
+            module: module,
+            generationStrategy: generationStrategy,
+            options: options,
+            serviceProviders: serviceProviders
+        )
+        self.statistics = MTLGenerationStatistics()
+        for (name, value) in globals {
+            executionContext.setGlobalVariable(name, value: value)
+        }
+    }
+
+    /// Creates a new MTL generator for the specified module with the behaviour of version 0.6.
+    ///
+    /// The generator follows ``MTLOptions/legacy``, with the given way of reading unset features.
     ///
     /// - Parameters:
     ///   - module: The MTL module to execute
@@ -157,31 +193,22 @@ public final class MTLGenerator {
     ///     (default: none). See ``setGlobalVariable(_:value:)`` for the precedence rules.
     ///   - unsetFeatureReads: How templates read structural features that have not been set
     ///     (default: ``UnsetFeatureReads/defaults``). See ``unsetFeatureReads``.
-    ///   - letTypeMismatches: How `let` blocks treat a value that does not conform to the
-    ///     declared type of its variable (default: ``MTLLetTypeMismatches/error``).
-    ///     See ``letTypeMismatches``.
-    public init(
+    @available(
+        *, deprecated,
+        message: "Use init(module:generationStrategy:options:serviceProviders:globals:); pass options: .legacy to keep the behaviour of version 0.6"
+    )
+    public convenience init(
         module: MTLModule,
         generationStrategy: any MTLGenerationStrategy,
         serviceProviders: [any AQLServiceProvider] = [],
         globals: [String: (any EcoreValue)?] = [:],
-        unsetFeatureReads: UnsetFeatureReads = .defaults,
-        letTypeMismatches: MTLLetTypeMismatches = .error
+        unsetFeatureReads: UnsetFeatureReads = .defaults
     ) {
-        self.module = module
-        self.unsetFeatureReads = unsetFeatureReads
-        self.letTypeMismatches = letTypeMismatches
-        self.executionContext = MTLExecutionContext(
-            module: module,
-            generationStrategy: generationStrategy,
-            serviceProviders: serviceProviders,
-            unsetFeatureReads: unsetFeatureReads,
-            letTypeMismatches: letTypeMismatches
-        )
-        self.statistics = MTLGenerationStatistics()
-        for (name, value) in globals {
-            executionContext.setGlobalVariable(name, value: value)
-        }
+        var options = MTLOptions.legacy
+        options.unsetFeatureReads = unsetFeatureReads
+        self.init(
+            module: module, generationStrategy: generationStrategy, options: options,
+            serviceProviders: serviceProviders, globals: globals)
     }
 
     // MARK: - Global Variables
@@ -297,9 +324,10 @@ public final class MTLGenerator {
     /// is called on the main actor each time a template starts or finishes and each time a file
     /// is opened or finished, and once more when the run ends.
     ///
-    /// While the run lasts, the container of each model object is looked up only once for
-    /// `eContainer()`, `ancestors()` and the sibling services, so the models must not change
-    /// during the run except through services that declare ``AQLService/modifiesModels``.
+    /// With ``MTLOptions/cachesContainers`` set in ``options``, the container of each model
+    /// object is looked up only once while the run lasts for `eContainer()`, `ancestors()` and
+    /// the sibling services, so the models must not change during the run except through
+    /// services that declare ``AQLService/modifiesModels``.
     ///
     /// The run checks for cancellation at the start of every block and every loop iteration, and
     /// gives other work on the main actor the chance to proceed after every ten milliseconds
@@ -356,7 +384,11 @@ public final class MTLGenerator {
             }
 
             // Execute the template
-            try await executionContext.withContainmentCaching {
+            if options.cachesContainers {
+                try await executionContext.withContainmentCaching {
+                    try await executeTemplate(template, arguments: arguments, owner: owner)
+                }
+            } else {
                 try await executeTemplate(template, arguments: arguments, owner: owner)
             }
 
@@ -536,7 +568,9 @@ public final class MTLGenerator {
         // Bind parameters
         for (parameter, argument) in zip(query.parameters, arguments) {
             executionContext.setVariable(
-                parameter.name, value: MTLTypeMatcher.boundValue(of: argument, to: parameter.type))
+                parameter.name,
+                value: MTLTypeMatcher.boundValue(
+                    of: argument, to: parameter.type, collectionParameters: options.collectionParameters))
         }
 
         // Evaluate query body

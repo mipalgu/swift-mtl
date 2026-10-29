@@ -33,15 +33,18 @@ enum MTLTestSupport {
     ///   - source: The module source.
     ///   - main: The name of the template to run.
     ///   - arguments: The template arguments.
+    ///   - options: The options of the generator, or `nil` for a generator created without
+    ///     options (default: `nil`).
     /// - Returns: The generated files by name; the main output is under ``standardOutput``.
     @MainActor
     static func run(
         _ source: String,
         main: String = "main",
-        arguments: [(any EcoreValue)?] = []
+        arguments: [(any EcoreValue)?] = [],
+        options: MTLOptions? = nil
     ) async throws -> [String: String] {
         let module = try await parse(source)
-        return try await run(module, main: main, arguments: arguments)
+        return try await run(module, main: main, arguments: arguments, options: options)
     }
 
     /// Runs a template of an already parsed module and returns all generated files.
@@ -50,15 +53,20 @@ enum MTLTestSupport {
     ///   - module: The module.
     ///   - main: The name of the template to run.
     ///   - arguments: The template arguments.
+    ///   - options: The options of the generator, or `nil` for a generator created without
+    ///     options (default: `nil`).
     /// - Returns: The generated files by name.
     @MainActor
     static func run(
         _ module: MTLModule,
         main: String = "main",
-        arguments: [(any EcoreValue)?] = []
+        arguments: [(any EcoreValue)?] = [],
+        options: MTLOptions? = nil
     ) async throws -> [String: String] {
         let strategy = MTLInMemoryStrategy()
-        let generator = MTLGenerator(module: module, generationStrategy: strategy)
+        let generator = options.map {
+            MTLGenerator(module: module, generationStrategy: strategy, options: $0)
+        } ?? MTLGenerator(module: module, generationStrategy: strategy)
         try await generator.generate(mainTemplate: main, arguments: arguments, models: [:])
         return await strategy.getGeneratedFiles()
     }
@@ -68,9 +76,10 @@ enum MTLTestSupport {
     static func output(
         _ source: String,
         main: String = "main",
-        arguments: [(any EcoreValue)?] = []
+        arguments: [(any EcoreValue)?] = [],
+        options: MTLOptions? = nil
     ) async throws -> String {
-        let files = try await run(source, main: main, arguments: arguments)
+        let files = try await run(source, main: main, arguments: arguments, options: options)
         return files[standardOutput] ?? ""
     }
 

@@ -40,7 +40,8 @@ struct MTLLetTypeMismatchTests {
     private static func run(_ body: String, handling: MTLLetTypeMismatches) async throws -> Run {
         let module = try await MTLTestSupport.parse(module(body))
         let strategy = MTLInMemoryStrategy()
-        let generator = MTLGenerator(module: module, generationStrategy: strategy, letTypeMismatches: handling)
+        let generator = MTLGenerator(
+            module: module, generationStrategy: strategy, options: MTLOptions(letTypeMismatches: handling))
         try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
         let output = await strategy.getGeneratedFiles()[MTLTestSupport.standardOutput] ?? ""
         return Run(output: output, warnings: generator.statistics.warnings)
@@ -58,8 +59,8 @@ struct MTLLetTypeMismatchTests {
     @Test("A mismatch is a type error by default")
     func defaultIsError() async throws {
         let module = try await MTLTestSupport.parse(Self.module("before[let x : Integer = 'a']inside[/let]"))
-        let generator = MTLGenerator(module: module, generationStrategy: MTLInMemoryStrategy())
-        #expect(generator.letTypeMismatches == .error)
+        let generator = MTLGenerator(module: module, generationStrategy: MTLInMemoryStrategy(), options: MTLOptions())
+        #expect(generator.options.letTypeMismatches == .error)
         await #expect(throws: MTLExecutionError.self) {
             try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
         }
@@ -126,7 +127,7 @@ struct MTLLetTypeMismatchTests {
         let module = try await MTLTestSupport.parse(
             "[module m('u')/]\n[template main(t : OclAny)][let s : String = t]inside[/let][/template]")
         let generator = MTLGenerator(
-            module: module, generationStrategy: MTLInMemoryStrategy(), letTypeMismatches: .skip)
+            module: module, generationStrategy: MTLInMemoryStrategy(), options: MTLOptions(letTypeMismatches: .skip))
         let thing = DynamicEObject(eClass: EClass(name: "Thing"))
         try await generator.generate(mainTemplate: "main", arguments: [thing], models: [:])
         let message = try #require(generator.statistics.warnings.first?.message)
@@ -218,7 +219,7 @@ struct MTLLetTypeMismatchTests {
     func warningsReset() async throws {
         let module = try await MTLTestSupport.parse(Self.module("[let x : Integer = 'a']inside[/let]"))
         let generator = MTLGenerator(
-            module: module, generationStrategy: MTLInMemoryStrategy(), letTypeMismatches: .skip)
+            module: module, generationStrategy: MTLInMemoryStrategy(), options: MTLOptions(letTypeMismatches: .skip))
         try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
         try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
         #expect(generator.statistics.warnings.count == 1)
@@ -229,7 +230,7 @@ struct MTLLetTypeMismatchTests {
         let module = try await MTLTestSupport.parse(
             Self.module("[let x : Integer = 'a']inside[/let][missing()/]"))
         let generator = MTLGenerator(
-            module: module, generationStrategy: MTLInMemoryStrategy(), letTypeMismatches: .skip)
+            module: module, generationStrategy: MTLInMemoryStrategy(), options: MTLOptions(letTypeMismatches: .skip))
         await #expect(throws: (any Error).self) {
             try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
         }
@@ -241,7 +242,7 @@ struct MTLLetTypeMismatchTests {
     func summaryCountsWarnings() async throws {
         let module = try await MTLTestSupport.parse(Self.module("[let x : Integer = 'a']inside[/let]"))
         let generator = MTLGenerator(
-            module: module, generationStrategy: MTLInMemoryStrategy(), letTypeMismatches: .skip)
+            module: module, generationStrategy: MTLInMemoryStrategy(), options: MTLOptions(letTypeMismatches: .skip))
         try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
         #expect(generator.statistics.summary().contains("Warnings: 1"))
         var statistics = generator.statistics
@@ -255,8 +256,9 @@ struct MTLLetTypeMismatchTests {
     func contextSkips() async throws {
         let module = try await MTLTestSupport.parse(Self.module("x"))
         let strategy = MTLInMemoryStrategy()
-        let context = MTLExecutionContext(module: module, generationStrategy: strategy, letTypeMismatches: .skip)
-        #expect(context.letTypeMismatches == .skip)
+        let context = MTLExecutionContext(
+            module: module, generationStrategy: strategy, options: MTLOptions(letTypeMismatches: .skip))
+        #expect(context.options.letTypeMismatches == .skip)
         let parsed = try await MTLTestSupport.parse(Self.module("[let x : Integer = 'a']inside[/let]"))
         let statement = try #require(parsed.templates["main"]?.body.statements.first as? MTLLetStatement)
         try await statement.execute(in: context)
@@ -267,8 +269,8 @@ struct MTLLetTypeMismatchTests {
     @Test("An execution context reports mismatches as type errors by default")
     func contextDefault() async throws {
         let module = try await MTLTestSupport.parse(Self.module("x"))
-        let context = MTLExecutionContext(module: module, generationStrategy: MTLInMemoryStrategy())
-        #expect(context.letTypeMismatches == .error)
+        let context = MTLExecutionContext(module: module, generationStrategy: MTLInMemoryStrategy(), options: MTLOptions())
+        #expect(context.options.letTypeMismatches == .error)
         let parsed = try await MTLTestSupport.parse(Self.module("[let x : Integer = 'a']inside[/let]"))
         let statement = try #require(parsed.templates["main"]?.body.statements.first as? MTLLetStatement)
         await #expect(throws: MTLExecutionError.self) {

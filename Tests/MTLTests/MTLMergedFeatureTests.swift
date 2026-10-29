@@ -28,7 +28,7 @@ struct MTLMergedFeatureTests {
             import [item/];
             [/emit]
             [/template]
-            """)
+            """, options: .standard)
         #expect(output == "import b.B;\nimport a.A;\n")
     }
 

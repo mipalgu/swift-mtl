@@ -101,7 +101,7 @@ private struct BlockModel {
     func output(_ body: String, on argument: any EObject) async throws -> String {
         let module = try await MTLTestSupport.parse(Self.header + body)
         let strategy = MTLInMemoryStrategy()
-        let generator = MTLGenerator(module: module, generationStrategy: strategy)
+        let generator = MTLGenerator(module: module, generationStrategy: strategy, options: .standard)
         try await generator.generate(
             mainTemplate: "main", arguments: [argument], models: [Self.packageName: resource])
         return await strategy.getGeneratedFiles()[MTLTestSupport.standardOutput] ?? ""
@@ -290,7 +290,7 @@ struct MTLCollectionElementTypeTests {
             [query kind(xs : Sequence(Integer)) : String = 'integers'/]
             [query count(xs : Sequence(String)) : Integer = xs->size()/]
             """)
-        let helpers = MTLQueryHelpers.helpers(for: module)
+        let helpers = MTLQueryHelpers.helpers(for: module, options: .standard)
         #expect(try await MTLQueryHelpers.call("kind", arguments: [["a"]], among: helpers) as? String == "strings")
         #expect(try await MTLQueryHelpers.call("kind", arguments: [[1, 2]], among: helpers) as? String == "integers")
         #expect(

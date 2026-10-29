@@ -73,7 +73,7 @@ struct MTLTypedLetTests {
     @MainActor
     func generatesCollection() async throws {
         let output = try await MTLTestSupport.output(Self.module(
-            "[let names : Sequence(String) = Sequence{'a', 'b'}][for (n : String | names) separator(', ')][n/][/for][/let]"))
+            "[let names : Sequence(String) = Sequence{'a', 'b'}][for (n : String | names) separator(', ')][n/][/for][/let]"), options: .standard)
         #expect(output == "a, b")
     }
 
@@ -81,7 +81,7 @@ struct MTLTypedLetTests {
     @MainActor
     func generatesSeveral() async throws {
         let output = try await MTLTestSupport.output(Self.module(
-            "[let n : Integer = 2, r : Real = n, s : String = 'v' + n.toString()][n/] [r/] [s/][/let]"))
+            "[let n : Integer = 2, r : Real = n, s : String = 'v' + n.toString()][n/] [r/] [s/][/let]"), options: .standard)
         #expect(output == "2 2 v2")
     }
 
@@ -89,7 +89,7 @@ struct MTLTypedLetTests {
     @MainActor
     func nullConforms() async throws {
         let output = try await MTLTestSupport.output(Self.module(
-            "[let s : String = null][if (s = null)]none[/if][/let]"))
+            "[let s : String = null][if (s = null)]none[/if][/let]"), options: .standard)
         #expect(output == "none")
     }
 
@@ -106,7 +106,7 @@ struct MTLTypedLetTests {
     @MainActor
     func mismatch(type: String, value: String) async {
         do {
-            _ = try await MTLTestSupport.output(Self.module("[let x : \(type) = \(value)][x/][/let]"))
+            _ = try await MTLTestSupport.output(Self.module("[let x : \(type) = \(value)][x/][/let]"), options: .standard)
             Issue.record("Expected a type error for \(type) = \(value)")
         } catch let error as MTLExecutionError {
             guard case .typeError(let message) = error else {
@@ -125,7 +125,7 @@ struct MTLTypedLetTests {
     func mismatchStopsBody() async throws {
         let module = try await MTLTestSupport.parse(Self.module("before[let x : Integer = 'a']inside[/let]"))
         let strategy = MTLInMemoryStrategy()
-        let generator = MTLGenerator(module: module, generationStrategy: strategy)
+        let generator = MTLGenerator(module: module, generationStrategy: strategy, options: .standard)
         await #expect(throws: MTLExecutionError.self) {
             try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
         }
@@ -147,7 +147,7 @@ struct MTLTypedLetTests {
         ])
     @MainActor
     func elementTypesConform(type: String, value: String, size: String) async throws {
-        let output = try await MTLTestSupport.output(Self.module("[let x : \(type) = \(value)][x->size()/][/let]"))
+        let output = try await MTLTestSupport.output(Self.module("[let x : \(type) = \(value)][x->size()/][/let]"), options: .standard)
         #expect(output == size)
     }
 
@@ -163,7 +163,7 @@ struct MTLTypedLetTests {
     @MainActor
     func elementTypeMismatch(type: String, value: String) async {
         do {
-            _ = try await MTLTestSupport.output(Self.module("[let x : \(type) = \(value)][x/][/let]"))
+            _ = try await MTLTestSupport.output(Self.module("[let x : \(type) = \(value)][x/][/let]"), options: .standard)
             Issue.record("Expected a type error for \(type) = \(value)")
         } catch let error as MTLExecutionError {
             guard case .typeError(let message) = error else {

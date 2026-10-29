@@ -587,21 +587,24 @@ public struct MTLLetStatement: MTLStatement {
     /// Binds the variables in a new scope and executes the body.
     ///
     /// The variables are bound in order, so that later initialisers can refer
-    /// to earlier variables. A variable that declares a type only accepts a
-    /// value that conforms to it, as a template parameter does; `null`
-    /// conforms to every type. A variable of a collection type holds its
-    /// value as a collection, as a template parameter does.
+    /// to earlier variables. If the ``MTLOptions/checksLetTypes`` of the
+    /// context's ``MTLExecutionContext/options`` is set, a variable that
+    /// declares a type only accepts a value that conforms to it, as a template
+    /// parameter does; `null` conforms to every type. A variable of a
+    /// collection type holds its value as a template parameter does. Otherwise
+    /// every value is bound as it is.
     ///
     /// What happens to a value that does not conform depends on the
-    /// ``MTLExecutionContext/letTypeMismatches`` of the context: with
+    /// ``MTLOptions/letTypeMismatches`` of the context's options: with
     /// ``MTLLetTypeMismatches/error`` it is a type error, and with
     /// ``MTLLetTypeMismatches/skip`` the remaining bindings and the body are
     /// skipped and a warning is recorded in ``MTLExecutionContext/warnings``.
     ///
     /// - Parameter context: The execution context.
-    /// - Throws: ``MTLExecutionError/typeError(_:)`` if a value does not conform
-    ///   to the declared type of its variable and mismatches are errors, or any
-    ///   error from evaluating the initialisers or executing the body.
+    /// - Throws: ``MTLExecutionError/typeError(_:)`` if declared types are
+    ///   checked, a value does not conform to the declared type of its variable
+    ///   and mismatches are errors, or any error from evaluating the
+    ///   initialisers or executing the body.
     @MainActor
     public func execute(in context: MTLExecutionContext) async throws {
         // Push scope
@@ -612,10 +615,18 @@ public struct MTLLetStatement: MTLStatement {
         for binding in variables {
             let value = try await binding.initExpression.evaluate(in: context)
             let variable = binding.variable
-            if let value, MTLTypeMatcher.distance(of: value, to: variable.type) == nil {
+            let options = context.options
+            guard options.checksLetTypes else {
+                context.setVariable(variable.name, value: value)
+                continue
+            }
+            let collectionParameters = options.collectionParameters
+            if let value,
+               MTLTypeMatcher.distance(
+                of: value, to: variable.type, collectionParameters: collectionParameters) == nil {
                 let mismatch = "Variable '\(variable.name)' of type \(variable.type) cannot hold a value of type "
                     + MTLTypeMatcher.typeName(of: value)
-                switch context.letTypeMismatches {
+                switch options.letTypeMismatches {
                 case .error:
                     throw MTLExecutionError.typeError(mismatch)
                 case .skip:
@@ -623,7 +634,10 @@ public struct MTLLetStatement: MTLStatement {
                     return
                 }
             }
-            context.setVariable(variable.name, value: MTLTypeMatcher.boundValue(of: value, to: variable.type))
+            context.setVariable(
+                variable.name,
+                value: MTLTypeMatcher.boundValue(
+                    of: value, to: variable.type, collectionParameters: collectionParameters))
         }
 
         // Execute body
