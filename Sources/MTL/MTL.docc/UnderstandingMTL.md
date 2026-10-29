@@ -94,7 +94,9 @@ counter.
 
 ### Let and if
 
-`[let a = e, b = f]...[/let]` binds several variables for its body. `[if (cond)]`,
+`[let a = e, b = f]...[/let]` binds several variables for its body. A variable may declare
+a type, as in `[let names : Sequence(String) = e]`; a value that does not conform to the
+declared type is a type error, while `null` conforms to every type. `[if (cond)]`,
 `[elseif (cond)]` and `[else]` select text, and `if ... then ... else ... endif` is also an
 expression.
 

@@ -1628,20 +1628,10 @@ final class MTLSyntaxParser {
             advance()
 
             // Parse optional type annotation: : Type
-            var varType = "OclAny"  // Default type
+            var varType = MTLSyntax.anyType  // Default type
             if case .colon = current()?.type {
                 advance()  // Consume ':'
-
-                switch current()?.type {
-                case .identifier(let typeName):
-                    varType = typeName
-                    advance()
-                case .keyword(let typeName):
-                    varType = typeName
-                    advance()
-                default:
-                    throw error("Expected type name after ':'")
-                }
+                varType = try parseTypeName()
             }
 
             // Parse '=' and initialization expression

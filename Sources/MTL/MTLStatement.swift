@@ -554,16 +554,32 @@ public struct MTLLetStatement: MTLStatement {
         self.multiLines = multiLines
     }
 
+    /// Binds the variables in a new scope and executes the body.
+    ///
+    /// The variables are bound in order, so that later initialisers can refer
+    /// to earlier variables. A variable that declares a type only accepts a
+    /// value that conforms to it, as a template parameter does; `null`
+    /// conforms to every type.
+    ///
+    /// - Parameter context: The execution context.
+    /// - Throws: ``MTLExecutionError/typeError(_:)`` if a value does not conform
+    ///   to the declared type of its variable, or any error from evaluating the
+    ///   initialisers or executing the body.
     @MainActor
     public func execute(in context: MTLExecutionContext) async throws {
         // Push scope
         context.pushScope()
         defer { context.popScope() }
 
-        // Evaluate and bind variables
+        // Evaluate, check, and bind variables
         for binding in variables {
             let value = try await binding.initExpression.evaluate(in: context)
-            context.setVariable(binding.variable.name, value: value)
+            let variable = binding.variable
+            if let value, MTLTypeMatcher.distance(of: value, to: variable.type) == nil {
+                throw MTLExecutionError.typeError(
+                    "Variable '\(variable.name)' of type \(variable.type) cannot hold a value of type \(Swift.type(of: value))")
+            }
+            context.setVariable(variable.name, value: value)
         }
 
         // Execute body
