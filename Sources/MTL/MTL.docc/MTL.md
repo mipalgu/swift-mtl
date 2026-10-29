@@ -40,6 +40,14 @@ swift-aql release. See <doc:UnderstandingMTL> for details.
 
 - <doc:GettingStarted>
 - <doc:UnderstandingMTL>
+- <doc:Compatibility>
+
+### Options
+
+- ``MTLOptions``
+- ``MTLBlockLineBreaks``
+- ``MTLCollectionParameters``
+- ``MTLLetTypeMismatches``
 
 ### Parsing and Modules
 
@@ -64,7 +72,6 @@ swift-aql release. See <doc:UnderstandingMTL> for details.
 
 - ``MTLGenerator``
 - ``MTLGenerationStatistics``
-- ``MTLLetTypeMismatches``
 - ``MTLGenerationStrategy``
 - ``MTLInMemoryStrategy``
 - ``MTLFileSystemStrategy``
