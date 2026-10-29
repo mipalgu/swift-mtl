@@ -92,21 +92,33 @@ public struct MTLTextStatement: MTLStatement {
     /// Whether a newline should be added after this text.
     public let newLineNeeded: Bool
 
+    /// Whether the text starts with the line break that ends the line of a block's closing tag.
+    ///
+    /// The enclosing ``MTLBlock`` does not duplicate such a line break: it is dropped when the
+    /// block that closes on that line wrote text ending in a line break. A block written on one
+    /// line, such as `[if (c)][call()/][/if]`, then adds no blank line after a call whose output
+    /// already ends a line, just as an expression tag on a line of its own adds none.
+    public let followsClosingTagLine: Bool
+
     /// Creates a new text statement.
     ///
     /// - Parameters:
     ///   - value: The literal text to output
     ///   - multiLines: Whether this text spans multiple lines (default: false)
     ///   - newLineNeeded: Whether to add a newline after the text (default: false)
+    ///   - followsClosingTagLine: Whether the text starts with the line break that ends the
+    ///     line of a block's closing tag (default: false)
     ///   - origin: Where the construct was written, if known (default: none).
     public init(
         value: String, multiLines: Bool = false, newLineNeeded: Bool = false,
+        followsClosingTagLine: Bool = false,
         origin: SourceOrigin = .init()
     ) {
         self.origin = origin
         self.value = value
         self.multiLines = multiLines
         self.newLineNeeded = newLineNeeded
+        self.followsClosingTagLine = followsClosingTagLine
     }
 
     @MainActor
@@ -554,16 +566,33 @@ public struct MTLLetStatement: MTLStatement {
         self.multiLines = multiLines
     }
 
+    /// Binds the variables in a new scope and executes the body.
+    ///
+    /// The variables are bound in order, so that later initialisers can refer
+    /// to earlier variables. A variable that declares a type only accepts a
+    /// value that conforms to it, as a template parameter does; `null`
+    /// conforms to every type. A variable of a collection type holds its
+    /// value as a collection, as a template parameter does.
+    ///
+    /// - Parameter context: The execution context.
+    /// - Throws: ``MTLExecutionError/typeError(_:)`` if a value does not conform
+    ///   to the declared type of its variable, or any error from evaluating the
+    ///   initialisers or executing the body.
     @MainActor
     public func execute(in context: MTLExecutionContext) async throws {
         // Push scope
         context.pushScope()
         defer { context.popScope() }
 
-        // Evaluate and bind variables
+        // Evaluate, check, and bind variables
         for binding in variables {
             let value = try await binding.initExpression.evaluate(in: context)
-            context.setVariable(binding.variable.name, value: value)
+            let variable = binding.variable
+            if let value, MTLTypeMatcher.distance(of: value, to: variable.type) == nil {
+                throw MTLExecutionError.typeError(
+                    "Variable '\(variable.name)' of type \(variable.type) cannot hold a value of type \(Swift.type(of: value))")
+            }
+            context.setVariable(variable.name, value: MTLTypeMatcher.boundValue(of: value, to: variable.type))
         }
 
         // Execute body
@@ -857,6 +886,7 @@ public struct MTLMacroInvocation: MTLStatement {
         for argumentExpr in arguments {
             argumentValues.append(try await argumentExpr.evaluate(in: context))
         }
+        argumentValues = await context.resolvedArguments(argumentValues)
 
         // Look up the macro in this module, the modules it extends, and its imports
         guard let (macro, owner) = context.macro(named: macroName, for: argumentValues) else {

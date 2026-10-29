@@ -34,6 +34,12 @@ public enum MTLDiagnosticCode: String, Sendable, CaseIterable {
     /// A comment or documentation comment is not terminated.
     case unterminatedComment = "mtl.unterminatedComment"
 
+    /// A directive has no closing `]`.
+    ///
+    /// The problem is reported where the directive opens, for instance at the header of a
+    /// template whose `]` is missing, rather than at the text or directive that follows.
+    case unterminatedDirective = "mtl.unterminatedDirective"
+
     /// A declaration repeats one that already exists.
     case duplicateDeclaration = "mtl.duplicateDeclaration"
 }

@@ -301,6 +301,11 @@ Every model passed to `generate(mainTemplate:arguments:models:)` or registered w
 and `allInstances()` can see its objects. Note that the AQL library counts strings and
 collections from one (`'hello'.substring(1, 2)`, `seq->at(1)`).
 
+During a generation run the containment structure of the models is examined once and
+reused by `eContainer()`, `ancestors()` and the sibling services. Templates do not change
+their models; a service that does must be created with `modifiesModels: true`, so that
+later containment queries see the change.
+
 ### Global variables
 
 Global variables are visible to every template, query and macro, and are read like any other
