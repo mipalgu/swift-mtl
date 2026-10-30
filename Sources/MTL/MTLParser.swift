@@ -219,6 +219,9 @@ final class MTLLexer {
     /// The lexical problems found so far, when ``recovering``.
     private(set) var problems: [MTLLexicalProblem] = []
 
+    /// Where the directive being read opened, while in directive mode.
+    private var directiveOpening: DirectiveOpening?
+
     // MARK: - Initialization
 
     /// Creates a lexer.
@@ -244,6 +247,18 @@ final class MTLLexer {
 
     fileprivate func mark() -> Mark { Mark(line: line, column: column, offset: offset) }
 
+    /// The `[` that opened the directive being read.
+    private struct DirectiveOpening {
+        /// Where the `[` is.
+        let mark: Mark
+
+        /// The index of the `[` in the input.
+        let position: String.Index
+
+        /// The index of the `[` token in the token list.
+        let tokenIndex: Int
+    }
+
     /// Records a lexical problem.
     ///
     /// - Parameters:
@@ -262,18 +277,24 @@ final class MTLLexer {
     func tokenize() throws -> [MTLToken] {
         var tokens: [MTLToken] = []
 
-        while position < input.endIndex {
-            let before = tokens.count
-            switch mode {
-            case .text:
-                try tokenizeText(&tokens)
-            case .directive:
-                try tokenizeDirective(&tokens)
+        repeat {
+            while position < input.endIndex {
+                let before = tokens.count
+                switch mode {
+                case .text:
+                    try tokenizeText(&tokens)
+                case .directive:
+                    try tokenizeDirective(&tokens)
+                }
+                for index in min(before, tokens.count)..<tokens.count
+                where tokens[index].endOffset == MTLToken.pendingEnd {
+                    tokens[index].endOffset = offset
+                }
             }
-            for index in before..<tokens.count where tokens[index].endOffset == MTLToken.pendingEnd {
-                tokens[index].endOffset = offset
+            if mode == .directive {
+                try unterminatedDirective(&tokens)
             }
-        }
+        } while position < input.endIndex
 
         // Flush any remaining text
         flushPendingText(&tokens)
@@ -301,6 +322,7 @@ final class MTLLexer {
 
             // Switch to directive mode
             mode = .directive
+            directiveOpening = DirectiveOpening(mark: mark(), position: position, tokenIndex: tokens.count)
             tokens.append(
                 MTLToken(
                     type: .leftBracket, line: line, column: column, offset: offset,
@@ -337,6 +359,13 @@ final class MTLLexer {
             tokens.append(MTLToken(type: .rightBracket, line: tokenLine, column: tokenColumn, offset: tokenOffset, endOffset: MTLToken.pendingEnd))
             advance()
             mode = .text
+            directiveOpening = nil
+            return
+        }
+
+        // A left bracket cannot occur inside a directive, so the directive lacks its ']'
+        if char == "[" {
+            try unterminatedDirective(&tokens)
             return
         }
 
@@ -360,6 +389,45 @@ final class MTLLexer {
 
         // Operators and punctuation
         try tokenizeOperatorOrPunctuation(&tokens)
+    }
+
+    /// Handles a directive that ends without its closing `]`.
+    ///
+    /// The problem is located at the `[` that opened the directive. When recovering, the
+    /// directive is taken to end after its last token on the line where it opened, as if
+    /// the `]` had been written there; whatever follows is read again as template text, and
+    /// problems found in it while it was read as part of the directive are dropped.
+    ///
+    /// - Parameter tokens: The token list that receives the closing bracket.
+    /// - Throws: A parse error unless recovering.
+    private func unterminatedDirective(_ tokens: inout [MTLToken]) throws {
+        guard let opening = directiveOpening else { return }
+        let first = opening.tokenIndex + 1
+        let message: String
+        if first < tokens.count, case .keyword(let keyword) = tokens[first].type {
+            message = "Unterminated '[\(keyword)' directive: expected ']'"
+        } else {
+            message = "Unterminated directive: expected ']'"
+        }
+        guard recovering else {
+            throw parseError(message, line: opening.mark.line, column: opening.mark.column)
+        }
+
+        let kept = tokens[first...].prefix { $0.line == opening.mark.line }.count
+        tokens.removeSubrange((first + kept)...)
+        let end = tokens[first + kept - 1].endOffset
+        problems.removeAll { $0.offset >= end }
+
+        position = opening.position
+        line = opening.mark.line
+        column = opening.mark.column
+        offset = opening.mark.offset
+        while offset < end { advance() }
+
+        report(.unterminatedDirective, message, from: opening.mark)
+        tokens.append(MTLToken(type: .rightBracket, line: line, column: column, offset: end, endOffset: end))
+        mode = .text
+        directiveOpening = nil
     }
 
     // MARK: - Specific Token Types
@@ -774,7 +842,7 @@ extension MTLSyntax {
         let lexer = MTLLexer(source, recovering: true)
         let tokens = (try? lexer.tokenize()) ?? []
         return tokens.compactMap { token in
-            guard let kind = token.type.highlightKind else { return nil }
+            guard token.endOffset > token.offset, let kind = token.type.highlightKind else { return nil }
             return SourceToken(
                 kind: kind, range: table.range(fromUTF8Offset: token.offset, to: token.endOffset))
         }
@@ -1355,7 +1423,9 @@ final class MTLSyntaxParser {
         switch token.type {
         case .text(let textContent):
             advance()
-            return MTLTextStatement(value: textContent, origin: origin(from: start))
+            return MTLTextStatement(
+                value: textContent, followsClosingTagLine: endsClosingTagLine(text: token, at: start),
+                origin: origin(from: start))
 
         case .leftBracket:
             advance()
@@ -1446,6 +1516,28 @@ final class MTLSyntaxParser {
         return MTLExpressionStatement(
             expression: expr, followedByLineBreak: nextTextStartsWithLineBreak(),
             origin: origin(from: start))
+    }
+
+    /// Whether a text token starts with the line break that ends the line of a closing tag.
+    ///
+    /// The closing tag (`[/name]`) must directly precede the text in the source, so a line break
+    /// that only follows a closing tag because the tag's own line was removed by the standalone
+    /// line rule does not count.
+    ///
+    /// - Parameters:
+    ///   - text: The text token.
+    ///   - index: The position of the text token in the token stream.
+    /// - Returns: `true` if the text begins with the line break of a closing tag's line.
+    private func endsClosingTagLine(text: MTLToken, at index: Int) -> Bool {
+        let tagLength = 4
+        guard case .text(let value) = text.type, value.first?.isNewline == true,
+              index >= tagLength else { return false }
+        let tag = tokens[(index - tagLength)..<index]
+        return tag[tag.startIndex].type == .leftBracket
+            && tag[tag.startIndex + 1].type == .slash
+            && closingTagName(tag[tag.startIndex + 2]) != nil
+            && tag[tag.startIndex + 3].type == .rightBracket
+            && tag[tag.startIndex + 3].endOffset == text.offset
     }
 
     /// Whether the next token is text that begins with a line break.
@@ -1628,20 +1720,10 @@ final class MTLSyntaxParser {
             advance()
 
             // Parse optional type annotation: : Type
-            var varType = "OclAny"  // Default type
+            var varType = MTLSyntax.anyType  // Default type
             if case .colon = current()?.type {
                 advance()  // Consume ':'
-
-                switch current()?.type {
-                case .identifier(let typeName):
-                    varType = typeName
-                    advance()
-                case .keyword(let typeName):
-                    varType = typeName
-                    advance()
-                default:
-                    throw error("Expected type name after ':'")
-                }
+                varType = try parseTypeName()
             }
 
             // Parse '=' and initialization expression

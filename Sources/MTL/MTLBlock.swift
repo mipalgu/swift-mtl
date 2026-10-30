@@ -86,6 +86,13 @@ public struct MTLBlock: Sendable, Equatable, Hashable {
     /// If the block is not inlined, indentation is pushed before execution
     /// and popped afterward. Statements are executed sequentially.
     ///
+    /// With ``MTLBlockLineBreaks/acceleo`` as the ``MTLOptions/blockLineBreaks`` of the
+    /// context, when a statement is followed by text that starts with the line break of its
+    /// closing tag's line (see ``MTLTextStatement/followsClosingTagLine``), that line break is
+    /// dropped if the current line is empty once the statement has run: either the statement
+    /// wrote text ending in a line break, so that the line break is not duplicated, or it stood
+    /// at the start of its line and wrote nothing, so that it produces no line.
+    ///
     /// - Parameter context: The execution context
     /// - Throws: `MTLExecutionError` if any statement execution fails
     @MainActor
@@ -101,10 +108,25 @@ public struct MTLBlock: Sendable, Equatable, Hashable {
         }
 
         try await context.checkpoint()
-        for statement in statements {
+        let dropsLineBreaks = context.options.blockLineBreaks == .acceleo
+        for (index, statement) in statements.enumerated() {
             try await statement.execute(in: context)
+            if dropsLineBreaks, endsClosingTagLine(at: index), !(await context.isMidLine) {
+                context.absorbNextLineBreak(true)
+            }
             try await context.checkpoint()
         }
+    }
+
+    /// Whether the statement at an index closes on a line whose line break the next statement starts with.
+    ///
+    /// - Parameter index: The index of a statement of ``statements``.
+    /// - Returns: `true` if the next statement is text that starts with the line break of the
+    ///   closing tag's line.
+    private func endsClosingTagLine(at index: Int) -> Bool {
+        let next = index + 1
+        guard next < statements.count, let text = statements[next] as? MTLTextStatement else { return false }
+        return text.followsClosingTagLine
     }
 
     // MARK: - Equatable

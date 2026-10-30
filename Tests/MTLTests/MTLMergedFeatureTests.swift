@@ -28,8 +28,8 @@ struct MTLMergedFeatureTests {
             import [item/];
             [/emit]
             [/template]
-            """)
-        #expect(output == "\nimport b.B;\nimport a.A;\n")
+            """, options: .standard)
+        #expect(output == "import b.B;\nimport a.A;\n")
     }
 
     @Test("Emitted blocks inherit the indentation of their line")

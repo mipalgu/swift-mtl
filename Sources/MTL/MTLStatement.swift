@@ -92,6 +92,16 @@ public struct MTLTextStatement: MTLStatement {
     /// Whether a newline should be added after this text.
     public let newLineNeeded: Bool
 
+    /// Whether the text starts with the line break that ends the line of a block's closing tag.
+    ///
+    /// The enclosing ``MTLBlock`` does not duplicate such a line break: it is dropped when the
+    /// block that closes on that line wrote text ending in a line break. A block written on one
+    /// line, such as `[if (c)][call()/][/if]`, then adds no blank line after a call whose output
+    /// already ends a line, just as an expression tag on a line of its own adds none. The line
+    /// break is also dropped when the block starts its line and writes nothing, so that such a
+    /// line produces no output, as for an expression tag with no result.
+    public let followsClosingTagLine: Bool
+
     /// Creates a new text statement.
     ///
     /// - Parameters:
@@ -103,10 +113,30 @@ public struct MTLTextStatement: MTLStatement {
         value: String, multiLines: Bool = false, newLineNeeded: Bool = false,
         origin: SourceOrigin = .init()
     ) {
+        self.init(
+            value: value, multiLines: multiLines, newLineNeeded: newLineNeeded,
+            followsClosingTagLine: false, origin: origin)
+    }
+
+    /// Creates a new text statement that may follow the line of a block's closing tag.
+    ///
+    /// - Parameters:
+    ///   - value: The literal text to output
+    ///   - multiLines: Whether this text spans multiple lines (default: false)
+    ///   - newLineNeeded: Whether to add a newline after the text (default: false)
+    ///   - followsClosingTagLine: Whether the text starts with the line break that ends the
+    ///     line of a block's closing tag
+    ///   - origin: Where the construct was written, if known (default: none).
+    public init(
+        value: String, multiLines: Bool = false, newLineNeeded: Bool = false,
+        followsClosingTagLine: Bool,
+        origin: SourceOrigin = .init()
+    ) {
         self.origin = origin
         self.value = value
         self.multiLines = multiLines
         self.newLineNeeded = newLineNeeded
+        self.followsClosingTagLine = followsClosingTagLine
     }
 
     @MainActor
@@ -554,16 +584,60 @@ public struct MTLLetStatement: MTLStatement {
         self.multiLines = multiLines
     }
 
+    /// Binds the variables in a new scope and executes the body.
+    ///
+    /// The variables are bound in order, so that later initialisers can refer
+    /// to earlier variables. If the ``MTLOptions/checksLetTypes`` of the
+    /// context's ``MTLExecutionContext/options`` is set, a variable that
+    /// declares a type only accepts a value that conforms to it, as a template
+    /// parameter does; `null` conforms to every type. A variable of a
+    /// collection type holds its value as a template parameter does. Otherwise
+    /// every value is bound as it is.
+    ///
+    /// What happens to a value that does not conform depends on the
+    /// ``MTLOptions/letTypeMismatches`` of the context's options: with
+    /// ``MTLLetTypeMismatches/error`` it is a type error, and with
+    /// ``MTLLetTypeMismatches/skip`` the remaining bindings and the body are
+    /// skipped and a warning is recorded in ``MTLExecutionContext/warnings``.
+    ///
+    /// - Parameter context: The execution context.
+    /// - Throws: ``MTLExecutionError/typeError(_:)`` if declared types are
+    ///   checked, a value does not conform to the declared type of its variable
+    ///   and mismatches are errors, or any error from evaluating the
+    ///   initialisers or executing the body.
     @MainActor
     public func execute(in context: MTLExecutionContext) async throws {
         // Push scope
         context.pushScope()
         defer { context.popScope() }
 
-        // Evaluate and bind variables
+        // Evaluate, check, and bind variables
         for binding in variables {
             let value = try await binding.initExpression.evaluate(in: context)
-            context.setVariable(binding.variable.name, value: value)
+            let variable = binding.variable
+            let options = context.options
+            guard options.checksLetTypes else {
+                context.setVariable(variable.name, value: value)
+                continue
+            }
+            let collectionParameters = options.collectionParameters
+            if let value,
+               MTLTypeMatcher.distance(
+                of: value, to: variable.type, collectionParameters: collectionParameters) == nil {
+                let mismatch = "Variable '\(variable.name)' of type \(variable.type) cannot hold a value of type "
+                    + MTLTypeMatcher.typeName(of: value)
+                switch options.letTypeMismatches {
+                case .error:
+                    throw MTLExecutionError.typeError(mismatch)
+                case .skip:
+                    context.warn(.letTypeMismatch, mismatch + ", so the let block is skipped", at: origin)
+                    return
+                }
+            }
+            context.setVariable(
+                variable.name,
+                value: MTLTypeMatcher.boundValue(
+                    of: value, to: variable.type, collectionParameters: collectionParameters))
         }
 
         // Execute body
@@ -857,6 +931,7 @@ public struct MTLMacroInvocation: MTLStatement {
         for argumentExpr in arguments {
             argumentValues.append(try await argumentExpr.evaluate(in: context))
         }
+        argumentValues = await context.resolvedArguments(argumentValues)
 
         // Look up the macro in this module, the modules it extends, and its imports
         guard let (macro, owner) = context.macro(named: macroName, for: argumentValues) else {

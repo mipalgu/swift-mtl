@@ -8,10 +8,11 @@
 
 import EMFBase
 
-/// The codes of the diagnostics that the MTL parser reports.
+/// The codes of the diagnostics that the MTL parser and generator report.
 ///
 /// The raw value of each case is the stable code in ``SourceDiagnostic/code``. Problems in
 /// expressions are reported with the same codes, as unexpected tokens or an unexpected end.
+/// The generator reports its warnings in ``MTLGenerationStatistics/warnings``.
 public enum MTLDiagnosticCode: String, Sendable, CaseIterable {
     /// A token appeared where the syntax does not allow it.
     case unexpectedToken = "mtl.unexpectedToken"
@@ -34,8 +35,19 @@ public enum MTLDiagnosticCode: String, Sendable, CaseIterable {
     /// A comment or documentation comment is not terminated.
     case unterminatedComment = "mtl.unterminatedComment"
 
+    /// A directive has no closing `]`.
+    ///
+    /// The problem is reported where the directive opens, for instance at the header of a
+    /// template whose `]` is missing, rather than at the text or directive that follows.
+    case unterminatedDirective = "mtl.unterminatedDirective"
+
     /// A declaration repeats one that already exists.
     case duplicateDeclaration = "mtl.duplicateDeclaration"
+
+    /// A `let` block was skipped because a value does not conform to the declared type of its variable.
+    ///
+    /// The generator reports this warning only with ``MTLLetTypeMismatches/skip``.
+    case letTypeMismatch = "mtl.letTypeMismatch"
 }
 
 /// The kinds of node in the outline of a module.

@@ -206,7 +206,11 @@ A template has:
 
 Parameter types may be simple names (`String`, `Integer`, `Animal`), qualified
 names (`ecore::EClass`) or collection types with an element type
-(`Sequence(String)`, `OrderedSet(ecore::EClass)`).
+(`Sequence(String)`, `OrderedSet(ecore::EClass)`). With the default
+`collectionParameters` option, a collection, such as the value of a many-valued
+feature, conforms to a collection type when its elements conform to the element
+type; with `.exact`, as in version 0.6, any collection value conforms to any
+collection type.
 
 ```mtl
 [template t(c : ecore::EClass, names : Sequence(String), n : OrderedSet(ecore::EClass))]b[/template]
@@ -382,7 +386,13 @@ variable named `i` shadows it.
 [let count : Integer = 42][count/][/let]
 ```
 
-Several bindings may be separated by commas; a binding may carry a type.
+Several bindings may be separated by commas; a binding may carry a type. A
+value that does not conform to the declared type is a type error by default,
+while `null` conforms to every type. A generator whose options set
+`letTypeMismatches` to `.skip` instead skips the block and reports a warning, as
+Acceleo 3 skips the body of a typed `let` whose value does not conform. With
+`checksLetTypes` set to `false`, as in version 0.6, declared types are not
+checked.
 
 ### File
 
@@ -591,6 +601,12 @@ The rule is the one of MOFM2T:
   comments) and white space produces no output. Its leading white space and its
   line break are dropped.
 - A line that contains text or an expression tag keeps its line break.
+- The line break after an expression tag, or after the closing tag of a block
+  written on one line, is dropped when the line is empty once the expression or
+  block has run: its output ended in a line break, or it started its line and
+  produced nothing. For blocks this is the Acceleo 4 rule, the default
+  `blockLineBreaks` option; `.kept`, as in version 0.6, always writes the line
+  break after a block.
 - Text is otherwise emitted literally. Block bodies are not re-indented.
 - A multi-line result of an expression (for example from a template call)
   inherits the leading white space of the line on which the expression starts.

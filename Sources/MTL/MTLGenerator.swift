@@ -49,7 +49,7 @@ import OrderedCollections
 ///
 /// // Create generator
 /// let strategy = MTLInMemoryStrategy()
-/// let generator = MTLGenerator(module: module, generationStrategy: strategy)
+/// let generator = MTLGenerator(module: module, generationStrategy: strategy, options: .standard)
 ///
 /// // Register models
 /// var models: [String: Resource] = [:]
@@ -131,12 +131,56 @@ public final class MTLGenerator {
     /// With ``UnsetFeatureReads/defaults``, the default, an unset attribute reads as its
     /// declared or data type default and an unset many-valued feature as an empty collection,
     /// as in the Eclipse Modeling Framework. With ``UnsetFeatureReads/undefined`` an unset
-    /// feature reads as `nil`, which `[expression/]` prints as nothing.
+    /// feature reads as `nil`, which `[expression/]` prints as nothing. This is the
+    /// ``MTLOptions/unsetFeatureReads`` of ``options``.
     public let unsetFeatureReads: UnsetFeatureReads
+
+    /// The behaviours that the generator follows.
+    ///
+    /// See ``MTLOptions`` for the behaviours and their defaults. A generator created without
+    /// options follows ``MTLOptions/legacy``.
+    public let options: MTLOptions
 
     // MARK: - Initialisation
 
-    /// Creates a new MTL generator for the specified module.
+    /// Creates a new MTL generator for the specified module with the given options.
+    ///
+    /// - Parameters:
+    ///   - module: The MTL module to execute.
+    ///   - generationStrategy: The output strategy for generated text.
+    ///   - options: The behaviours that the generator follows. Pass ``MTLOptions/standard``
+    ///     for the documented behaviour or ``MTLOptions/legacy`` for that of version 0.6.
+    ///   - serviceProviders: AQL service providers made available to the templates
+    ///     (default: none). Later providers take precedence over earlier ones; the
+    ///     templates, queries and macros of the module always take precedence over
+    ///     services of the same name.
+    ///   - globals: Global variables visible to every template, query and macro
+    ///     (default: none). See ``setGlobalVariable(_:value:)`` for the precedence rules.
+    public init(
+        module: MTLModule,
+        generationStrategy: any MTLGenerationStrategy,
+        options: MTLOptions,
+        serviceProviders: [any AQLServiceProvider] = [],
+        globals: [String: (any EcoreValue)?] = [:]
+    ) {
+        self.module = module
+        self.options = options
+        self.unsetFeatureReads = options.unsetFeatureReads
+        self.executionContext = MTLExecutionContext(
+            module: module,
+            generationStrategy: generationStrategy,
+            options: options,
+            serviceProviders: serviceProviders
+        )
+        self.statistics = MTLGenerationStatistics()
+        for (name, value) in globals {
+            executionContext.setGlobalVariable(name, value: value)
+        }
+    }
+
+    /// Creates a new MTL generator for the specified module with the behaviour of version 0.6.
+    ///
+    /// The generator follows ``MTLOptions/legacy``, with the given way of reading unset features.
     ///
     /// - Parameters:
     ///   - module: The MTL module to execute
@@ -149,25 +193,22 @@ public final class MTLGenerator {
     ///     (default: none). See ``setGlobalVariable(_:value:)`` for the precedence rules.
     ///   - unsetFeatureReads: How templates read structural features that have not been set
     ///     (default: ``UnsetFeatureReads/defaults``). See ``unsetFeatureReads``.
-    public init(
+    @available(
+        *, deprecated,
+        message: "Use init(module:generationStrategy:options:serviceProviders:globals:); pass options: .legacy to keep the behaviour of version 0.6"
+    )
+    public convenience init(
         module: MTLModule,
         generationStrategy: any MTLGenerationStrategy,
         serviceProviders: [any AQLServiceProvider] = [],
         globals: [String: (any EcoreValue)?] = [:],
         unsetFeatureReads: UnsetFeatureReads = .defaults
     ) {
-        self.module = module
-        self.unsetFeatureReads = unsetFeatureReads
-        self.executionContext = MTLExecutionContext(
-            module: module,
-            generationStrategy: generationStrategy,
-            serviceProviders: serviceProviders,
-            unsetFeatureReads: unsetFeatureReads
-        )
-        self.statistics = MTLGenerationStatistics()
-        for (name, value) in globals {
-            executionContext.setGlobalVariable(name, value: value)
-        }
+        var options = MTLOptions.legacy
+        options.unsetFeatureReads = unsetFeatureReads
+        self.init(
+            module: module, generationStrategy: generationStrategy, options: options,
+            serviceProviders: serviceProviders, globals: globals)
     }
 
     // MARK: - Global Variables
@@ -283,6 +324,11 @@ public final class MTLGenerator {
     /// is called on the main actor each time a template starts or finishes and each time a file
     /// is opened or finished, and once more when the run ends.
     ///
+    /// With ``MTLOptions/cachesContainers`` set in ``options``, the container of each model
+    /// object is looked up only once while the run lasts for `eContainer()`, `ancestors()` and
+    /// the sibling services, so the models must not change during the run except through
+    /// services that declare ``AQLService/modifiesModels``.
+    ///
     /// The run checks for cancellation at the start of every block and every loop iteration, and
     /// gives other work on the main actor the chance to proceed after every ten milliseconds
     /// of work, so a task that runs the generation keeps the user interface responsive and can
@@ -338,7 +384,13 @@ public final class MTLGenerator {
             }
 
             // Execute the template
-            try await executeTemplate(template, arguments: arguments, owner: owner)
+            if options.cachesContainers {
+                try await executionContext.withContainmentCaching {
+                    try await executeTemplate(template, arguments: arguments, owner: owner)
+                }
+            } else {
+                try await executeTemplate(template, arguments: arguments, owner: owner)
+            }
 
             // Finalize
             try await executionContext.finalize()
@@ -347,6 +399,7 @@ public final class MTLGenerator {
             // Record success
             statistics.successful = true
             statistics.executionTime = Date().timeIntervalSince(startTime)
+            statistics.warnings = executionContext.warnings
 
             if debug {
                 print("MTL Generation Completed Successfully")
@@ -358,6 +411,7 @@ public final class MTLGenerator {
             statistics.successful = false
             statistics.executionTime = Date().timeIntervalSince(startTime)
             statistics.lastError = error
+            statistics.warnings = executionContext.warnings
 
             if debug {
                 print("MTL Generation Failed")
@@ -513,7 +567,10 @@ public final class MTLGenerator {
 
         // Bind parameters
         for (parameter, argument) in zip(query.parameters, arguments) {
-            executionContext.setVariable(parameter.name, value: argument)
+            executionContext.setVariable(
+                parameter.name,
+                value: MTLTypeMatcher.boundValue(
+                    of: argument, to: parameter.type, collectionParameters: options.collectionParameters))
         }
 
         // Evaluate query body
@@ -638,6 +695,14 @@ public struct MTLGenerationStatistics: Sendable {
     /// The last error that occurred (if any).
     public var lastError: Error?
 
+    /// The distinct warnings of the run, in the order in which they were first reported.
+    ///
+    /// Each warning is a `SourceDiagnostic` with the severity `warning`, a stable code from
+    /// ``MTLDiagnosticCode`` and, where known, the range of the construct in its template.
+    /// Warnings are recorded whether or not the run succeeds; a warning that repeats an
+    /// earlier one, such as the same mismatch in every iteration of a loop, is recorded once.
+    public var warnings: [SourceDiagnostic] = []
+
     // MARK: - Operations
 
     /// Resets all statistics to their initial state.
@@ -649,6 +714,7 @@ public struct MTLGenerationStatistics: Sendable {
         linesGenerated = 0
         protectedAreasPreserved = 0
         lastError = nil
+        warnings = []
     }
 
     /// Returns a formatted summary of the statistics.
@@ -663,6 +729,7 @@ public struct MTLGenerationStatistics: Sendable {
         lines.append("  Files generated: \(filesGenerated)")
         lines.append("  Lines generated: \(linesGenerated)")
         lines.append("  Protected areas preserved: \(protectedAreasPreserved)")
+        lines.append("  Warnings: \(warnings.count)")
 
         if let error = lastError {
             lines.append("  Last error: \(error)")

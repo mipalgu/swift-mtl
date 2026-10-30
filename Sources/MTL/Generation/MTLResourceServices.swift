@@ -83,7 +83,7 @@ public enum MTLResourceServicesError: Error, LocalizedError, Equatable, Sendable
 ///
 /// ```swift
 /// let module = try await MTLParser().parse(templateURL)
-/// let generator = MTLGenerator(module: module, generationStrategy: MTLInMemoryStrategy())
+/// let generator = MTLGenerator(module: module, generationStrategy: MTLInMemoryStrategy(), options: .standard)
 /// generator.register(MTLResourceServices(module: module))
 /// ```
 ///

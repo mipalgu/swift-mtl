@@ -181,7 +181,9 @@ extension MTLExecutionContext {
             var total = 0
             var applicable = true
             for (value, type) in zip(arguments, candidate.parameterTypes) {
-                guard let distance = MTLTypeMatcher.distance(of: value, to: type) else {
+                guard let distance = MTLTypeMatcher.distance(
+                    of: value, to: type, collectionParameters: options.collectionParameters)
+                else {
                     applicable = false
                     break
                 }
@@ -237,6 +239,7 @@ extension MTLExecutionContext {
         for argument in invocation.arguments {
             values.append(try await argument.evaluate(in: aqlContext))
         }
+        values = await resolvedArguments(values)
 
         if let chosen = bestCallable(among: candidates, for: values) {
             return try await invoke(chosen, arguments: values)
@@ -269,6 +272,56 @@ extension MTLExecutionContext {
             throw MTLExecutionError.invalidOperation(
                 "No template, query, or macro '\(invocation.name)' accepts arguments (\(types.joined(separator: ", ")))")
         }
+    }
+
+    /// The arguments of an invocation with model references resolved to their objects.
+    ///
+    /// A model reference, on its own or as an element of a collection, may be held as the
+    /// identifier of its object. With ``MTLCollectionParameters/conforming``, every identifier
+    /// that a registered model resolves is replaced by its object, and every collection becomes
+    /// a collection value, so that the arguments can be matched against declared types and
+    /// bound to parameters. With ``MTLCollectionParameters/exact`` the arguments are returned
+    /// unchanged.
+    ///
+    /// - Parameter arguments: The evaluated arguments.
+    /// - Returns: The arguments with their references resolved.
+    func resolvedArguments(_ arguments: [(any EcoreValue)?]) async -> [(any EcoreValue)?] {
+        guard options.collectionParameters == .conforming else { return arguments }
+        var resolved: [(any EcoreValue)?] = []
+        resolved.reserveCapacity(arguments.count)
+        for argument in arguments {
+            resolved.append(await resolvedValue(argument))
+        }
+        return resolved
+    }
+
+    /// A value with the model references it holds resolved to their objects.
+    ///
+    /// - Parameter value: The value, possibly an identifier or a collection.
+    /// - Returns: The object an identifier refers to, a collection value of resolved elements,
+    ///   or the value itself.
+    private func resolvedValue(_ value: (any EcoreValue)?) async -> (any EcoreValue)? {
+        if let identifier = value as? EUUID {
+            return await object(identifiedBy: identifier) ?? identifier
+        }
+        guard let elements = AQLValues.elements(of: value) else { return value }
+        var resolved: [any EcoreValue] = []
+        resolved.reserveCapacity(elements.count)
+        for element in elements {
+            resolved.append(await resolvedValue(element) ?? element)
+        }
+        return AQLValues.collection(resolved)
+    }
+
+    /// The object of a registered model with the given identifier.
+    ///
+    /// - Parameter identifier: The object identifier.
+    /// - Returns: The object, or `nil` if no registered model holds it.
+    private func object(identifiedBy identifier: EUUID) async -> (any EObject)? {
+        for resource in aqlContext.resources {
+            if let object = await resource.resolve(identifier) { return object }
+        }
+        return nil
     }
 
     /// The elements of a collection value, or `nil` for any other value.
@@ -326,14 +379,22 @@ extension MTLExecutionContext {
 
     /// Binds the parameters of an element and the implicit `self` variable.
     ///
+    /// With ``MTLCollectionParameters/conforming``, a parameter of a collection type holds its
+    /// argument as a collection value, so that collection operations apply to it (see
+    /// ``MTLTypeMatcher/boundValue(of:to:collectionParameters:)``).
+    ///
     /// - Parameters:
     ///   - parameters: The declared parameters.
     ///   - arguments: The evaluated arguments, one per parameter.
     func bindParameters(_ parameters: [MTLVariable], to arguments: [(any EcoreValue)?]) {
-        for (parameter, argument) in zip(parameters, arguments) {
-            setVariable(parameter.name, value: argument)
+        let values = zip(parameters, arguments).map { parameter, argument in
+            MTLTypeMatcher.boundValue(
+                of: argument, to: parameter.type, collectionParameters: options.collectionParameters)
         }
-        if let first = arguments.first, !parameters.contains(where: { $0.name == MTLSyntax.selfVariable }) {
+        for (parameter, value) in zip(parameters, values) {
+            setVariable(parameter.name, value: value)
+        }
+        if let first = values.first, !parameters.contains(where: { $0.name == MTLSyntax.selfVariable }) {
             setVariable(MTLSyntax.selfVariable, value: first)
         }
     }
