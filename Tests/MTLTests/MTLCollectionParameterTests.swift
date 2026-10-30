@@ -101,7 +101,7 @@ private struct ActionModel {
     static func output(_ source: String, on argument: any EObject, in resource: Resource) async throws -> String {
         let module = try await MTLTestSupport.parse(source)
         let strategy = MTLInMemoryStrategy()
-        let generator = MTLGenerator(module: module, generationStrategy: strategy)
+        let generator = MTLGenerator(module: module, generationStrategy: strategy, options: .standard)
         try await generator.generate(mainTemplate: "main", arguments: [argument], models: [packageName: resource])
         return await strategy.getGeneratedFiles()[MTLTestSupport.standardOutput] ?? ""
     }
@@ -331,7 +331,7 @@ struct MTLCollectionParameterTests {
         let module = try await MTLTestSupport.parse(Self.header + """
             [query count(xs : Sequence(String)) : Integer = xs->size()/]
             """)
-        let helpers = MTLQueryHelpers.helpers(for: module)
+        let helpers = MTLQueryHelpers.helpers(for: module, options: .standard)
         let result = try await MTLQueryHelpers.call("count", arguments: [["a", "b"]], among: helpers)
         #expect(result as? Int == 2)
         await #expect(throws: MTLExecutionError.self) {
@@ -341,14 +341,14 @@ struct MTLCollectionParameterTests {
 
     // MARK: Type Matching
 
-    @Test("Arrays of values conform to collection types without their elements being checked")
+    @Test("Arrays of values conform to collection types only if their elements do")
     func matcherAcceptsArrays() {
         let distance = MTLTypeMatcher.collectionDistance
         #expect(MTLTypeMatcher.distance(of: ["a"], to: "Sequence(String)") == distance)
         #expect(MTLTypeMatcher.distance(of: [1], to: "OrderedSet(Integer)") == distance)
         #expect(MTLTypeMatcher.distance(of: [true], to: "Collection(Boolean)") == distance)
         #expect(MTLTypeMatcher.distance(of: ["a"], to: "Sequence") == distance)
-        #expect(MTLTypeMatcher.distance(of: [1], to: "Sequence(String)") == distance)
+        #expect(MTLTypeMatcher.distance(of: [1], to: "Sequence(String)") == nil)
         #expect(MTLTypeMatcher.distance(of: [String](), to: "Bag(Integer)") == distance)
         #expect(MTLTypeMatcher.distance(of: "abc", to: "Sequence(String)") == nil)
     }

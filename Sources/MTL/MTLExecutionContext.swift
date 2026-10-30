@@ -66,7 +66,8 @@ import OCL
 /// let strategy = MTLInMemoryStrategy()
 /// let context = MTLExecutionContext(
 ///     module: module,
-///     generationStrategy: strategy
+///     generationStrategy: strategy,
+///     options: .standard
 /// )
 ///
 /// // Register models
@@ -198,30 +199,49 @@ public final class MTLExecutionContext: Sendable {
     /// execution state and decisions.
     public var debug: Bool = false
 
+    /// The behaviours that the context follows.
+    ///
+    /// See ``MTLOptions`` for the behaviours and their defaults. An execution context created
+    /// without options follows ``MTLOptions/legacy``.
+    public let options: MTLOptions
+
+    /// The distinct warnings of the current run, in the order in which they were first reported.
+    ///
+    /// A warning that repeats an earlier one, such as the same mismatch in every iteration of a
+    /// loop, is recorded once. The warnings are forgotten when the generator starts a new run.
+    public private(set) var warnings: [SourceDiagnostic] = []
+
+    /// The warnings recorded so far, for detecting repetitions.
+    private var recordedWarnings: Set<SourceDiagnostic> = []
+
     // MARK: - Initialisation
 
-    /// Creates a new MTL execution context.
+    /// Creates a new MTL execution context with the given options.
     ///
     /// - Parameters:
-    ///   - module: The MTL module to execute
-    ///   - generationStrategy: The output strategy for generated text
-    ///   - aqlContext: Optional AQL context (default: creates new one)
-    ///   - protectedAreaManager: Optional protected area manager for preserving user code
+    ///   - module: The MTL module to execute.
+    ///   - generationStrategy: The output strategy for generated text.
+    ///   - options: The behaviours that the context follows. Pass ``MTLOptions/standard`` for
+    ///     the documented behaviour or ``MTLOptions/legacy`` for that of version 0.6. The
+    ///     ``MTLOptions/aql`` and ``MTLOptions/unsetFeatureReads`` apply to the expression
+    ///     context and execution engine this initialiser creates; a supplied `aqlContext`
+    ///     keeps the options and engine it already has.
+    ///   - aqlContext: The expression context to evaluate expressions in, or `nil` to create
+    ///     one (default: `nil`).
+    ///   - protectedAreaManager: The manager that preserves user code in protected areas, or
+    ///     `nil` to create one (default: `nil`).
     ///   - serviceProviders: AQL service providers to register (default: none). Later
     ///     providers take precedence over earlier ones. See ``register(_:)``.
-    ///   - unsetFeatureReads: How templates read structural features that have not been set
-    ///     (default: ``UnsetFeatureReads/defaults``, as the Eclipse Modeling Framework does).
-    ///     The mode applies to the execution engine this initialiser creates; a supplied
-    ///     `aqlContext` keeps the engine it already has.
     public init(
         module: MTLModule,
         generationStrategy: any MTLGenerationStrategy,
+        options: MTLOptions,
         aqlContext: AQLExecutionContext? = nil,
         protectedAreaManager: MTLProtectedAreaManager? = nil,
-        serviceProviders: [any AQLServiceProvider] = [],
-        unsetFeatureReads: UnsetFeatureReads = .defaults
+        serviceProviders: [any AQLServiceProvider] = []
     ) {
         self.module = module
+        self.options = options
         self.generationStrategy = generationStrategy
         self.protectedAreaManager = protectedAreaManager ?? MTLProtectedAreaManager()
 
@@ -229,8 +249,8 @@ public final class MTLExecutionContext: Sendable {
         if let providedContext = aqlContext {
             self.aqlContext = providedContext
         } else {
-            let engine = ECoreExecutionEngine(models: [:], unsetFeatureReads: unsetFeatureReads)
-            self.aqlContext = AQLExecutionContext(executionEngine: engine)
+            let engine = ECoreExecutionEngine(models: [:], unsetFeatureReads: options.unsetFeatureReads)
+            self.aqlContext = AQLExecutionContext(executionEngine: engine, options: options.aql)
         }
 
         // Create initial stdout writer
@@ -248,14 +268,50 @@ public final class MTLExecutionContext: Sendable {
         }
     }
 
+    /// Creates a new MTL execution context with the behaviour of version 0.6.
+    ///
+    /// The context follows ``MTLOptions/legacy``, with the given way of reading unset features.
+    /// A context that this initialiser creates for expressions follows `AQLOptions/legacy`.
+    ///
+    /// - Parameters:
+    ///   - module: The MTL module to execute
+    ///   - generationStrategy: The output strategy for generated text
+    ///   - aqlContext: Optional AQL context (default: creates new one)
+    ///   - protectedAreaManager: Optional protected area manager for preserving user code
+    ///   - serviceProviders: AQL service providers to register (default: none). Later
+    ///     providers take precedence over earlier ones. See ``register(_:)``.
+    ///   - unsetFeatureReads: How templates read structural features that have not been set
+    ///     (default: ``UnsetFeatureReads/defaults``, as the Eclipse Modeling Framework does).
+    ///     The mode applies to the execution engine this initialiser creates; a supplied
+    ///     `aqlContext` keeps the engine it already has.
+    @available(
+        *, deprecated,
+        message: "Use init(module:generationStrategy:options:aqlContext:protectedAreaManager:serviceProviders:); pass options: .legacy to keep the behaviour of version 0.6"
+    )
+    public convenience init(
+        module: MTLModule,
+        generationStrategy: any MTLGenerationStrategy,
+        aqlContext: AQLExecutionContext? = nil,
+        protectedAreaManager: MTLProtectedAreaManager? = nil,
+        serviceProviders: [any AQLServiceProvider] = [],
+        unsetFeatureReads: UnsetFeatureReads = .defaults
+    ) {
+        var options = MTLOptions.legacy
+        options.unsetFeatureReads = unsetFeatureReads
+        self.init(
+            module: module, generationStrategy: generationStrategy, options: options,
+            aqlContext: aqlContext, protectedAreaManager: protectedAreaManager,
+            serviceProviders: serviceProviders)
+    }
+
     // MARK: - Containment Caching
 
-    /// Runs work with the containment structure of the models cached.
+    /// Runs work with the containers of model objects cached.
     ///
-    /// Templates do not change their input models, so the expression evaluator examines the
-    /// containment structure once for `eContainer()`, `ancestors()` and the sibling services
+    /// Templates do not change their input models, so the expression evaluator looks up the
+    /// container of each object once for `eContainer()`, `ancestors()` and the sibling services
     /// and reuses it while the work runs. Registering a model and calling a service that
-    /// declares ``AQLService/modifiesModels`` drop the cached structure. Any cached structure
+    /// declares ``AQLService/modifiesModels`` drop the cached containers. Any cached container
     /// is dropped before and after the work, and the earlier caching setting is restored, so
     /// that later evaluations see changes made to the models in between.
     ///
@@ -275,7 +331,7 @@ public final class MTLExecutionContext: Sendable {
 
     // MARK: - Progress and Cancellation
 
-    /// Starts a run: forgets earlier progress and installs the handler.
+    /// Starts a run: forgets earlier progress and warnings, and installs the handler.
     ///
     /// - Parameter handler: The handler to tell about progress, if any.
     func beginRun(reportingTo handler: (@MainActor @Sendable (MTLProgress) -> Void)?) {
@@ -284,6 +340,24 @@ public final class MTLExecutionContext: Sendable {
         currentFiles = []
         runningTemplates = []
         lastYield = ContinuousClock.now
+        warnings = []
+        recordedWarnings = []
+    }
+
+    // MARK: - Warnings
+
+    /// Records a warning unless the same warning has been recorded in this run before.
+    ///
+    /// - Parameters:
+    ///   - code: The code of the warning.
+    ///   - message: A description of the problem.
+    ///   - origin: Where the construct that caused the warning was written.
+    func warn(_ code: MTLDiagnosticCode, _ message: String, at origin: SourceOrigin) {
+        let warning = SourceDiagnostic(
+            severity: .warning, code: code.rawValue, message: message, range: origin.range)
+        guard recordedWarnings.insert(warning).inserted else { return }
+        warnings.append(warning)
+        if debug { print("Warning: \(message)") }
     }
 
     /// Tells the handler about the current progress.
@@ -570,13 +644,6 @@ public final class MTLExecutionContext: Sendable {
     func takeLineBreakAbsorption() -> Bool {
         defer { absorbsNextLineBreak = false }
         return absorbsNextLineBreak
-    }
-
-    /// The length of the text written to the current output so far, in UTF-8 code units.
-    var outputLength: Int {
-        get async {
-            await writerStack.last?.getContent().utf8.count ?? 0
-        }
     }
 
     /// Whether the current output has text on its last line.

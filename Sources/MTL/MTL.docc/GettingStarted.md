@@ -61,7 +61,7 @@ template. The main output is stored under the file name `stdout`.
 
 ```swift
 let strategy = MTLInMemoryStrategy()
-let generator = MTLGenerator(module: module, generationStrategy: strategy)
+let generator = MTLGenerator(module: module, generationStrategy: strategy, options: .standard)
 
 try await generator.generate(
     mainTemplate: "main",
@@ -72,6 +72,10 @@ try await generator.generate(
 let files = await strategy.getGeneratedFiles()
 print(files["stdout"] ?? "")  // Hello, World!
 ```
+
+The ``MTLOptions`` select the behaviour of the generator. ``MTLOptions/standard`` gives the
+behaviour that this documentation describes, and ``MTLOptions/legacy`` that of version 0.6
+(see <doc:Compatibility>).
 
 The `arguments` array holds the values for the template parameters in order. Pass model
 objects (for example the root of an input model) as arguments, and register whole
@@ -97,7 +101,7 @@ This is file [n/].
 
 ```swift
 let strategy = MTLFileSystemStrategy(basePath: "output")
-let generator = MTLGenerator(module: module, generationStrategy: strategy)
+let generator = MTLGenerator(module: module, generationStrategy: strategy, options: .standard)
 try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
 ```
 
@@ -169,7 +173,7 @@ Each stage throws its own error type.
 let strategy = MTLInMemoryStrategy()
 do {
     let module = try await parser.parse(URL(fileURLWithPath: "app.mtl"))
-    let generator = MTLGenerator(module: module, generationStrategy: strategy)
+    let generator = MTLGenerator(module: module, generationStrategy: strategy, options: .standard)
     try await generator.generate(mainTemplate: "main", arguments: [], models: [:])
 } catch let error as MTLModuleResolutionError {
     // A missing module lists every location that was searched.

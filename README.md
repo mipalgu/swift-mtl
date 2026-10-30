@@ -17,7 +17,8 @@ This package contains no executable. The `swift-mtl` command-line tool is provid
 - Template visibility (`public`, `protected`, `private`), guards, post-expressions, `overrides`, and overloading by parameter types
 - Module resolution through search paths, with `import` and `extends` linked recursively and cycles reported as errors
 - Expression syntax including collection literals, `->` calls, lambdas, type operations, and qualified names
-- The MOFM2T whitespace rule for lines that contain only block tags
+- The MOFM2T whitespace rule for lines that contain only block tags, and the Acceleo 4 rule for the line break after a block written on one line
+- Behaviour options (`MTLOptions`) that select the behaviour of this release or that of version 0.6
 - A generator with pluggable output strategies: in-memory (`MTLInMemoryStrategy`) and file system (`MTLFileSystemStrategy`)
 - Protected areas written with configurable start and end prefixes, preserved automatically when files are regenerated
 - Deferred `[collect]` and `[emit]` blocks, `[merge]` regeneration merging, `[layout]` code style conversion, generator options and file post-processors
@@ -66,7 +67,7 @@ import MTL
 let module = try await MTLParser().parse(URL(fileURLWithPath: "hello.mtl"))
 
 let strategy = MTLInMemoryStrategy()
-let generator = MTLGenerator(module: module, generationStrategy: strategy)
+let generator = MTLGenerator(module: module, generationStrategy: strategy, options: .standard)
 try await generator.generate(
     mainTemplate: "main",
     arguments: ["World"],
@@ -76,6 +77,8 @@ try await generator.generate(
 let files = await strategy.getGeneratedFiles()
 print(files["stdout"] ?? "")   // the main output is stored under "stdout"
 ```
+
+`options: .standard` selects the behaviour that this README describes (see [Behaviour options](#behaviour-options)). A generator created without `options` behaves as version 0.6 did (see [Compatibility with 0.6](#compatibility-with-06)).
 
 `MTLParser().parse(_:filename:)` parses template source held in a string instead of a file. Templates that write `[file (...)]` blocks add one entry per file to the dictionary. To write files to disk, use `MTLFileSystemStrategy(basePath:)` in place of `MTLInMemoryStrategy`.
 
@@ -112,6 +115,7 @@ Key points:
 - Queries and macros: `[query name(p : T) : R = expr/]` and `[macro name(p : T, body : Body)]...[/macro]`. Macros are called as `[name(args)]body[/name]`.
 - Loops: `[for (x : T | collection) separator(s) before(b) after(a)]`. The loop variable type and binding are optional, and the implicit counter `i` is available in the body.
 - Invocations: `[name(args)/]`, `[x.name(a)/]`, and `[self.name()/]`. Resolution looks at the current module, its parents, its imports, and then the AQL library; among overloads the nearest parameter types win.
+- Let blocks: `[let x : T = e, y = f]...[/let]`. A value that does not conform to the declared type is a type error by default; with the `letTypeMismatches` option set to `.skip` the block is skipped with a warning instead, as in Acceleo 3 (see [Typed let blocks](#typed-let-blocks)).
 - Literal brackets: `['['/]` and `[']'/]`.
 - Protected areas: `[protected ('id', 'startPrefix', 'endPrefix')]...[/protected]`.
 
@@ -292,7 +296,8 @@ struct GreetingServices: AQLServiceProvider {
 }
 
 let generator = MTLGenerator(
-    module: module, generationStrategy: strategy, serviceProviders: [GreetingServices()])
+    module: module, generationStrategy: strategy, options: .standard,
+    serviceProviders: [GreetingServices()])
 generator.register(GreetingServices())  // later registrations take precedence
 ```
 
@@ -301,10 +306,75 @@ Every model passed to `generate(mainTemplate:arguments:models:)` or registered w
 and `allInstances()` can see its objects. Note that the AQL library counts strings and
 collections from one (`'hello'.substring(1, 2)`, `seq->at(1)`).
 
-During a generation run the containment structure of the models is examined once and
-reused by `eContainer()`, `ancestors()` and the sibling services. Templates do not change
-their models; a service that does must be created with `modifiesModels: true`, so that
-later containment queries see the change.
+With the `cachesContainers` option (the default), the container of each model object is
+looked up once during a generation run and reused by `eContainer()`, `ancestors()` and the
+sibling services. Templates do not change their models; a service that does must be created
+with `modifiesModels: true`, so that later containment queries see the change. Set
+`cachesContainers` to `false` to look up every container afresh, as version 0.6 did.
+
+### Typed let blocks
+
+A `let` variable may declare a type, as in `[let names : Sequence(String) = e]...[/let]`. The
+value is checked against the declared type as an argument is checked against a template
+parameter (see [Collection parameters](#collection-parameters)): a value of a collection type
+is bound as a collection, and `null` conforms to every type. By default, a value that does not
+conform to the declared type is a type error that stops the generation. The OMG MOFM2T
+specification and Acceleo 3 treat a typed `let` as a type test instead and skip its body
+silently. Set the `letTypeMismatches` option to `.skip` to follow them: the block is skipped,
+generation continues, and a warning that names the variable, its declared type and the type
+of the value is recorded in the generation statistics:
+
+```swift
+let generator = MTLGenerator(
+    module: module, generationStrategy: strategy, options: MTLOptions(letTypeMismatches: .skip))
+try await generator.generate(mainTemplate: "main", arguments: arguments, models: models)
+for warning in generator.statistics.warnings {
+    print("warning: \(warning.message)")
+}
+```
+
+Warnings are `SourceDiagnostic` values with the code `mtl.letTypeMismatch` and the range of
+the `let` block in its template. The same mismatch is reported once per run, even when it
+recurs in every iteration of a loop. With the `checksLetTypes` option set to `false`, declared
+types are not checked at all and every value is bound as it is, as in version 0.6.
+
+### Collection parameters
+
+A template, query or macro parameter may declare a collection type, such as
+`Sequence(String)`, `OrderedSet(ecore::EClass)` or `Collection(T)`. With the
+`collectionParameters` option at its default, `.conforming`, any collection whose elements
+conform to the element type is accepted, including the value of a many-valued feature, and
+the parameter holds it as a collection. Overloads are chosen by how closely the elements fit,
+so `Sequence(Assignment)` is preferred to `Sequence(Statement)` for a collection of
+assignments. A single model object also conforms to a collection type of its own type, as the
+only element, but less specifically than to any other type. With `.exact`, as in version 0.6,
+only collection values of the expression language conform to a collection type, whatever
+their elements, and arguments are passed as they are.
+
+### Behaviour options
+
+`MTLOptions` selects how the generator behaves. Pass it to
+`MTLGenerator(module:generationStrategy:options:serviceProviders:globals:)` or
+`MTLExecutionContext(module:generationStrategy:options:aqlContext:protectedAreaManager:serviceProviders:)`.
+`MTLOptions()` and `MTLOptions.standard` give the behaviour of this release, and
+`MTLOptions.legacy` that of version 0.6. Each property selects one behaviour:
+
+| Property | Default | Alternative |
+|--|--|--|
+| `aql` | `AQLOptions.standard`: the expression language behaves as in this release of swift-aql | `AQLOptions.legacy`, or any combination of its options, as described in the swift-aql README |
+| `blockLineBreaks` | `.acceleo`: the line break after a block written on one line is dropped when the line is empty once the block has run, as in Acceleo 4 | `.kept`: the line break is always written |
+| `collectionParameters` | `.conforming`: collections conform to collection types by their elements (see [Collection parameters](#collection-parameters)) | `.exact`: collection types are matched as in version 0.6 |
+| `checksLetTypes` | `true`: `let` values are checked against their declared types | `false`: values are bound as they are |
+| `letTypeMismatches` | `.error`: a `let` value that does not conform is a type error | `.skip`: the block is skipped with a warning (see [Typed let blocks](#typed-let-blocks)) |
+| `cachesContainers` | `true`: containers are looked up once per run | `false`: every container lookup sees the models as they are |
+| `unsetFeatureReads` | `.defaults`: unset features read as their defaults | `.undefined`: unset features read as `nil` |
+
+The enumerations' raw values (`acceleo`, `kept`, `conforming`, `exact`, `error`, `skip`) double
+as command-line spellings. For a block written on one line, such as
+`[if (c)][helper()/][/if]` on a line of its own, `.acceleo` adds no blank line after the
+output of `helper`, and an `[if (c)]...[/if]` on one line whose condition does not hold
+produces no line when it starts its line; text before the block on its line, including white
+space, keeps the line break.
 
 ### Global variables
 
@@ -314,7 +384,7 @@ variable (`[name/]`). Set them before generating, either through the initialiser
 
 ```swift
 let generator = MTLGenerator(
-    module: module, generationStrategy: strategy, globals: ["version": "1.2"])
+    module: module, generationStrategy: strategy, options: .standard, globals: ["version": "1.2"])
 generator.setGlobalVariable("author", value: "A. Person")
 ```
 
@@ -347,14 +417,14 @@ generator.register(MTLResourceServices(module: module, roots: [sharedResources])
 
 ### Calling queries from other hosts
 
-`MTLQueryHelpers.helpers(for:generator:)` lists the `[query]` definitions of a module and the public queries of its imports as `MTLQueryHelper` values, each with a name, parameter types, return type and an asynchronous `call` closure. The first argument is the receiver, the first declared parameter, so `e.render('c')` maps onto `render(e : Expression, lang : String)`. `MTLQueryHelpers.call(_:arguments:among:)` picks the overload that fits the arguments. Queries that follow references need the models that hold the objects: register them with `MTLGenerator.registerModel(_:resource:)` on the generator that you pass to `helpers(for:generator:)`. `MTLQueryServices` offers the same queries to AQL-based hosts as services, callable as `e.render('c')` and `render(e, 'c')`:
+`MTLQueryHelpers.helpers(for:generator:)` and `MTLQueryHelpers.helpers(for:options:)` list the `[query]` definitions of a module and the public queries of its imports as `MTLQueryHelper` values, each with a name, parameter types, return type and an asynchronous `call` closure. The first argument is the receiver, the first declared parameter, so `e.render('c')` maps onto `render(e : Expression, lang : String)`. `MTLQueryHelpers.call(_:arguments:among:)` picks the overload that fits the arguments, matching collection arguments as the `collectionParameters` of the generator's options say; without a generator, `helpers(for:generator:)` uses the options of version 0.6. Queries that follow references need the models that hold the objects: register them with `MTLGenerator.registerModel(_:resource:)` on the generator that you pass to `helpers(for:generator:)`. `MTLQueryServices` offers the same queries to AQL-based hosts as services, callable as `e.render('c')` and `render(e, 'c')`:
 
 ```swift
-let generator = MTLGenerator(module: module, generationStrategy: MTLInMemoryStrategy())
+let generator = MTLGenerator(module: module, generationStrategy: MTLInMemoryStrategy(), options: .standard)
 await generator.registerModel("IN", resource: resource)
 let helpers = MTLQueryHelpers.helpers(for: module, generator: generator)
 let text = try await MTLQueryHelpers.call("render", arguments: [element, "c"], among: helpers)
-generator.register(MTLQueryServices(module: module))
+generator.register(MTLQueryServices(module: module, generator: generator))
 ```
 
 ## Project Structure
@@ -407,6 +477,33 @@ The test suites are described in [Tests/MTLTests/README.md](Tests/MTLTests/READM
 - Protected area markers are `START PROTECTED REGION id` and `END PROTECTED REGION id` preceded by the configured prefixes; there are no default prefixes derived from the file extension.
 - Only the charsets listed under File Context are supported.
 - Macros have no visibility.
+
+## Compatibility with 0.6
+
+The initialisers `MTLGenerator(module:generationStrategy:serviceProviders:globals:unsetFeatureReads:)`
+and `MTLExecutionContext(module:generationStrategy:aqlContext:protectedAreaManager:serviceProviders:unsetFeatureReads:)`
+keep their 0.6 signatures and behave as in version 0.6: they use `MTLOptions.legacy`, with the
+given `unsetFeatureReads`. They are deprecated in favour of the initialisers that take
+`options:`; pass `options: .legacy` to keep the behaviour of version 0.6. Likewise,
+`MTLQueryHelper(name:parameterTypes:returnType:call:)` is deprecated in favour of the
+initialiser that takes `collectionParameters:`, and `MTLQueryHelpers.helpers(for:)` and
+`MTLQueryServices(module:)` without a generator use the options of version 0.6.
+
+This release changes the following behaviours. Each has an option in `MTLOptions`:
+
+| Behaviour | New default | Option | 0.6 behaviour |
+|--|--|--|--|
+| Expression language: collection arguments added whole, collection kinds kept, `including` on a single value giving a set, containers found through the resources | as in this release of swift-aql | `aql` | `AQLOptions.legacy` |
+| Line break after a block written on one line | dropped when the line is empty once the block has run, as in Acceleo 4 | `blockLineBreaks` | `.kept` |
+| Collections passed to collection-typed parameters | any collection whose elements conform, including many-valued features; references resolved to objects; a single object as the only element; overloads chosen by element types; collection-typed parameters hold collections | `collectionParameters` | `.exact` |
+| Declared types of `let` variables | checked | `checksLetTypes` | `false` |
+| Container lookups during a generation run | cached, so models may change only through services that declare `modifiesModels` | `cachesContainers` | `false` |
+
+`MTLOptions.legacy` sets all of these to their 0.6 behaviour. Some changes only affect templates
+that version 0.6 rejected, so they need no option: `let` variables of qualified and collection
+types such as `ecore::EClass` or `Sequence(String)` now parse, and a directive missing its `]` is
+reported where it opens, with the diagnostic code `mtl.unterminatedDirective`. Generation
+statistics also report warnings, such as those of `letTypeMismatches: .skip`.
 
 ## Compatibility
 

@@ -96,9 +96,30 @@ counter.
 
 `[let a = e, b = f]...[/let]` binds several variables for its body. A variable may declare
 a type, as in `[let names : Sequence(String) = e]`; a value that does not conform to the
-declared type is a type error, while `null` conforms to every type. `[if (cond)]`,
+declared type is a type error, while `null` conforms to every type. With
+``MTLOptions/checksLetTypes`` set to `false`, as in version 0.6, declared types are not checked
+and every value is bound as it is. `[if (cond)]`,
 `[elseif (cond)]` and `[else]` select text, and `if ... then ... else ... endif` is also an
 expression.
+
+The OMG MOFM2T specification and Acceleo 3 treat a typed `let` as a type test instead: when
+the value does not conform, the body is skipped silently. To follow them, set the
+``MTLOptions/letTypeMismatches`` of the options of the ``MTLGenerator`` (or
+``MTLExecutionContext``) to ``MTLLetTypeMismatches/skip``. A mismatch then
+skips the remaining bindings and the body of the block, generation continues after it, and a
+warning with the code ``MTLDiagnosticCode/letTypeMismatch`` that names the variable, its
+declared type and the type of the value is recorded in ``MTLGenerationStatistics/warnings``:
+
+```swift
+let generator = MTLGenerator(
+    module: module, generationStrategy: strategy, options: MTLOptions(letTypeMismatches: .skip))
+try await generator.generate(mainTemplate: "main", arguments: arguments, models: models)
+for warning in generator.statistics.warnings {
+    print("warning: \(warning.message)")
+}
+```
+
+The same mismatch is reported once, even when it recurs in every iteration of a loop.
 
 ## Expressions
 
@@ -133,8 +154,8 @@ feature reads as an empty collection. An unset string, wrapper, character, date 
 arbitrary-precision attribute without a declared default, or an unset single-valued
 reference, reads as `nil`, and `[expression/]` prints nothing for `nil`, so an unset string
 appears as empty text while an unset integer prints `0`. To read every unset feature as
-`nil` instead, create the ``MTLGenerator`` (or ``MTLExecutionContext``) with
-`unsetFeatureReads: .undefined`.
+`nil` instead, set the ``MTLOptions/unsetFeatureReads`` of the ``MTLOptions`` of the
+``MTLGenerator`` (or ``MTLExecutionContext``) to `.undefined`.
 
 The text escapes `['['/]` and `[']'/]` produce literal brackets.
 
@@ -162,6 +183,21 @@ Templates and queries may share a name when their parameter types differ. Identi
 signatures are an error. Among the applicable overloads the one with the smallest total
 type distance wins: an exact metaclass match costs 0, each supertype step adds 1, and
 `OclAny` or `null` cost a large amount. Ties go to the most derived module.
+
+With ``MTLCollectionParameters/conforming``, the default ``MTLOptions/collectionParameters``,
+a collection, such as the value of a many-valued feature, matches a collection type such
+as `Sequence(T)` when every element conforms to `T`; nested types such as
+`Sequence(Sequence(String))` are checked level by level. It costs 1 plus the cost of its
+least specific element, so `Sequence(Assignment)` is preferred to `Sequence(Statement)`
+for a collection of assignments, and any collection type is preferred to `OclAny`. A
+collection type without an element type, such as `Sequence`, accepts any collection for 1.
+An empty collection matches every collection type for 1, whatever its element type. A
+single model object also matches a collection type of its own type, as its only element,
+but less specifically than any other type. A parameter of a collection type holds its
+argument as a collection. The same rules decide whether a value conforms to the declared
+type of a `let` variable. With ``MTLCollectionParameters/exact``, as in version 0.6, any
+collection value of the expression language matches any collection type for 1, whatever
+its elements, and arguments are passed as they are.
 
 ### Extends and overriding
 
@@ -207,11 +243,17 @@ done
 produces `- a`, `- b` and `done`, each followed by a line break. A block that shares its
 line with text, such as `[if (true)]a[/if]`, keeps the line break.
 
-A line break directly after an expression tag or a closing block tag is not duplicated. It
-is dropped when the expression, or the block that closes there, wrote text ending in a line
-break, so a template call such as `[helper()/]` or `[if (c)][helper()/][/if]` on a line of
-its own adds no blank line after the output of `helper`. An expression tag alone on its line
-that produces nothing produces no line.
+A line break directly after an expression tag is not duplicated, and with
+``MTLBlockLineBreaks/acceleo``, the default ``MTLOptions/blockLineBreaks``, neither is one
+after a closing block tag. It is dropped when the expression, or the block that closes
+there, wrote text ending in a line break, so a template call such as `[helper()/]` or
+`[if (c)][helper()/][/if]` on a line of its own adds no blank line after the output of
+`helper`. The line break is also dropped when nothing has been written on its line: an expression tag that produces nothing, an
+`[if (c)]...[/if]` written on one line whose condition does not hold, or a `[for]` written
+on one line over an empty collection produces no line when it starts its line. Text before
+it on its line, including white space, keeps the line break. With
+``MTLBlockLineBreaks/kept``, as in version 0.6, the line break after a closing block tag is
+always written.
 
 Text is otherwise emitted literally, as in Acceleo 3. Block bodies are not re-indented
 automatically. A multi-line result of an expression, for example from a template call,
