@@ -8,6 +8,7 @@
 
 import AQL
 import ECore
+import Foundation
 
 /// The behaviours that a generator or an execution context follows.
 ///
@@ -129,6 +130,43 @@ public struct MTLOptions: Sendable, Equatable, Hashable {
         cachesContainers: false,
         unsetFeatureReads: .defaults
     )
+
+    /// Creates the options that a choice of semantics selects.
+    ///
+    /// `ModellingSemantics/standard` selects ``standard`` and
+    /// `ModellingSemantics/legacy` selects ``legacy``, whose expression language options
+    /// are those that `AQLOptions/init(semantics:)` selects.
+    ///
+    /// - Parameter semantics: The semantics to follow.
+    public init(semantics: ModellingSemantics) {
+        switch semantics {
+        case .standard: self = .standard
+        case .legacy: self = .legacy
+        }
+    }
+
+    /// Creates the options that an environment selects.
+    ///
+    /// The `SWIFT_MODELLING_SEMANTICS` variable (`ModellingSemantics/environmentVariable`)
+    /// selects ``standard`` or ``legacy`` by its value, `standard` or `legacy`. Without the
+    /// variable, or with an empty value, the options are ``standard``. A generator takes its
+    /// options once, when it is created, and uses them for every template it runs:
+    ///
+    /// ```swift
+    /// let generator = MTLGenerator(
+    ///     module: module, generationStrategy: strategy, options: try MTLOptions.fromEnvironment())
+    /// ```
+    ///
+    /// - Parameter environment: The environment variables to read; by default those of the
+    ///   current process.
+    /// - Returns: The selected options.
+    /// - Throws: `ModellingSemanticsError/invalidValue(_:variable:)` if the variable holds
+    ///   any other value.
+    public static func fromEnvironment(
+        _ environment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws(ModellingSemanticsError) -> MTLOptions {
+        MTLOptions(semantics: try ModellingSemantics.fromEnvironment(environment) ?? .standard)
+    }
 }
 
 /// What happens to the line break after the closing tag of a block written on one line.
