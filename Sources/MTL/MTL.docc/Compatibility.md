@@ -24,6 +24,17 @@ options. ``MTLQueryHelpers/helpers(for:generator:)`` and
 version 0.6, while ``MTLQueryHelpers/helpers(for:options:)`` and
 ``MTLQueryServices/init(module:options:)`` take options.
 
+``MTLOptions/init(semantics:)`` selects ``MTLOptions/standard`` or ``MTLOptions/legacy`` from
+a `ModellingSemantics` value, and ``MTLOptions/fromEnvironment(_:)`` reads that choice from the
+`SWIFT_MODELLING_SEMANTICS` environment variable (`standard` or `legacy`;
+``MTLOptions/standard`` if it is unset). A generator keeps the options it is created with for
+every template it runs:
+
+```swift
+let generator = MTLGenerator(
+    module: module, generationStrategy: strategy, options: try MTLOptions.fromEnvironment())
+```
+
 ### Changed behaviours
 
 | Behaviour | New default | Option | 0.6 behaviour |
