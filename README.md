@@ -376,6 +376,20 @@ output of `helper`, and an `[if (c)]...[/if]` on one line whose condition does n
 produces no line when it starts its line; text before the block on its line, including white
 space, keeps the line break.
 
+`MTLOptions(semantics:)` selects `.standard` or `.legacy` from a `ModellingSemantics` value,
+and `MTLOptions.fromEnvironment()` reads that choice from the `SWIFT_MODELLING_SEMANTICS`
+environment variable (`standard` or `legacy`; `.standard` if it is unset, and an error for any
+other value). A generator keeps the options it is created with for every template it runs:
+
+```swift
+let generator = MTLGenerator(
+    module: module, generationStrategy: strategy, options: try MTLOptions.fromEnvironment())
+```
+
+Containers are found as the `containerLookup` option of `aql` says; with `.resources`, each
+resource answers in the `ContainerLookupScope` configured for it or its resource set (see the
+swift-aql README).
+
 ### Global variables
 
 Global variables are visible to every template, query and macro, and are read like any other
