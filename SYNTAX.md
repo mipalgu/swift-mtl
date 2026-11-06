@@ -571,8 +571,25 @@ Without an iterator variable, `self` is the implicit iterator and the implicit
 receiver, so `->select(oclIsKindOf(EClass))` tests each element.
 
 Other names, such as `sortedBy`, `asSet`, `including`, `sum`, `reverse` and
-`at`, are evaluated by the swift-aql standard library. Method-style calls on
-collections, such as `coll.size()`, evaluate as well.
+`at`, are evaluated by the swift-aql standard library.
+
+A call written with `.` on a collection applies to each element, as in Eclipse
+AQL, just as navigation such as `coll.name` does. Use `->` to call a collection
+operation on the collection itself:
+
+```mtl
+[names->size()/]            the number of names
+[names.size()/]             the length of each name
+[names.toUpper()/]          each name in upper case
+```
+
+This is the behaviour of the default `dotCalls` option of the expression
+language (`MTLOptions.aql`); with `.collection`, as in version 0.6, a call
+written with `.` on a collection calls the collection operation, so
+`names.size()` is the number of names. A dot call that reaches an element
+without the operation while the collection has it, as in
+`[Sequence{1, 2}.size()/]`, is reported as a generation warning that suggests
+`->size()`.
 
 ## Escapes
 

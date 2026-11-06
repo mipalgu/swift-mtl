@@ -263,7 +263,8 @@ extension MTLExecutionContext {
         let call = AQLCallExpression(
             source: source,
             methodName: invocation.name,
-            arguments: rest.map { AQLLiteralExpression(value: $0) }
+            arguments: rest.map { AQLLiteralExpression(value: $0) },
+            origin: invocation.origin
         )
         do {
             return try await call.evaluate(in: aqlContext)

@@ -133,7 +133,13 @@ swift-aql against the registered models. The parser supports:
   is a type;
 - collection literals `Sequence{...}`, `OrderedSet{...}`, `Set{...}` and `Bag{...}`
   (`AQLCollectionLiteralExpression`);
-- navigation `a.b` and calls;
+- navigation `a.b` and calls `a.b(x)`. A call written with `.` on a collection applies to
+  each element, as navigation does, so `[names.size()/]` gives the length of each name while
+  `[names->size()/]` gives the number of names. With the `dotCalls` option of
+  ``MTLOptions/aql`` set to `.collection`, as in version 0.6, both give the number of names.
+  A dot call that reaches an element without the service while the collection has one, as in
+  `[Sequence{1, 2}.size()/]`, adds a warning with its line and column, suggesting `->`, to
+  ``MTLExecutionContext/warnings`` and ``MTLGenerationStatistics/warnings``;
 - `->name(args)` for any name. The known iterators `select`, `reject`, `collect`, `any`,
   `exists`, `forAll`, `indexOf`, `size`, `isEmpty`, `notEmpty`, `first` and `last`
   become AQL collection expressions, other names become `AQLCallExpression` nodes that
@@ -240,8 +246,9 @@ let module = try await parser.link(try await parser.parse(text, filename: "main.
 
 Operations written as `receiver.name(args)`, `receiver->name(args)` and `name(args)` that
 are not templates, queries or macros of the module are resolved against registered AQL
-services, and finally against the AQL standard library. Register additional services through
-the generator or the execution context:
+services, and finally against the AQL standard library. A dot call on a collection is
+resolved for each element (see <doc:UnderstandingMTL#Expressions>). Register additional
+services through the generator or the execution context:
 
 ```swift
 import AQL

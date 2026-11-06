@@ -42,7 +42,7 @@ let generator = MTLGenerator(
 
 | Behaviour | New default | Option | 0.6 behaviour |
 |--|--|--|--|
-| Expression language: collection arguments added whole, collection kinds kept, `including` on a single value giving a set, containers found through the resources | As in this release of swift-aql | ``MTLOptions/aql`` | `AQLOptions/legacy` |
+| Expression language: collection arguments added whole, collection kinds kept, `including` on a single value giving a set, containers found through the resources, dot calls on a collection applied to each element | As in this release of swift-aql | ``MTLOptions/aql`` | `AQLOptions/legacy` |
 | Line break after a block written on one line | Dropped when the line is empty once the block has run, as in Acceleo 4 | ``MTLOptions/blockLineBreaks`` | ``MTLBlockLineBreaks/kept`` |
 | Collections passed to collection-typed parameters | Any collection whose elements conform; references resolved to objects; a single object as the only element; overloads chosen by element types; parameters hold collections | ``MTLOptions/collectionParameters`` | ``MTLCollectionParameters/exact`` |
 | Declared types of `let` variables | Checked, with mismatches handled as ``MTLOptions/letTypeMismatches`` says | ``MTLOptions/checksLetTypes`` | `false` |

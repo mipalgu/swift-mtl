@@ -207,12 +207,26 @@ public final class MTLExecutionContext: Sendable {
 
     /// The distinct warnings of the current run, in the order in which they were first reported.
     ///
-    /// A warning that repeats an earlier one, such as the same mismatch in every iteration of a
-    /// loop, is recorded once. The warnings are forgotten when the generator starts a new run.
-    public private(set) var warnings: [SourceDiagnostic] = []
+    /// The warnings include those of the templates, such as a typed `let` that skips a value of
+    /// another type, and those that the expression context reports while evaluating
+    /// expressions, such as a call written with a dot on a collection whose elements lack the
+    /// service that the collection has (see `AQLDiagnosticCode/dotCallOnElements`). A warning
+    /// that repeats an earlier one, such as the same mismatch in every iteration of a loop, is
+    /// recorded once. The warnings are forgotten when the generator starts a new run, which
+    /// also clears the diagnostics of the expression context.
+    public var warnings: [SourceDiagnostic] {
+        collectExpressionWarnings()
+        return recordedWarningList
+    }
+
+    /// The warnings recorded so far in this run, in order.
+    private var recordedWarningList: [SourceDiagnostic] = []
 
     /// The warnings recorded so far, for detecting repetitions.
     private var recordedWarnings: Set<SourceDiagnostic> = []
+
+    /// The number of diagnostics of the expression context already examined in this run.
+    private var collectedExpressionDiagnostics = 0
 
     // MARK: - Initialisation
 
@@ -331,7 +345,8 @@ public final class MTLExecutionContext: Sendable {
 
     // MARK: - Progress and Cancellation
 
-    /// Starts a run: forgets earlier progress and warnings, and installs the handler.
+    /// Starts a run: forgets earlier progress and warnings, clears the diagnostics of the
+    /// expression context, and installs the handler.
     ///
     /// - Parameter handler: The handler to tell about progress, if any.
     func beginRun(reportingTo handler: (@MainActor @Sendable (MTLProgress) -> Void)?) {
@@ -340,8 +355,10 @@ public final class MTLExecutionContext: Sendable {
         currentFiles = []
         runningTemplates = []
         lastYield = ContinuousClock.now
-        warnings = []
+        recordedWarningList = []
         recordedWarnings = []
+        aqlContext.clearDiagnostics()
+        collectedExpressionDiagnostics = 0
     }
 
     // MARK: - Warnings
@@ -353,11 +370,37 @@ public final class MTLExecutionContext: Sendable {
     ///   - message: A description of the problem.
     ///   - origin: Where the construct that caused the warning was written.
     func warn(_ code: MTLDiagnosticCode, _ message: String, at origin: SourceOrigin) {
+        collectExpressionWarnings()
         let warning = SourceDiagnostic(
             severity: .warning, code: code.rawValue, message: message, range: origin.range)
-        guard recordedWarnings.insert(warning).inserted else { return }
-        warnings.append(warning)
+        guard record(warning) else { return }
         if debug { print("Warning: \(message)") }
+    }
+
+    /// Records the warnings that the expression context has reported since they were last
+    /// collected.
+    ///
+    /// Collecting them before each warning of the templates keeps all warnings in the order in
+    /// which they occurred.
+    private func collectExpressionWarnings() {
+        let diagnostics = aqlContext.diagnostics
+        // The expression context may have been cleared by its owner since the last collection.
+        if collectedExpressionDiagnostics > diagnostics.count { collectedExpressionDiagnostics = 0 }
+        for diagnostic in diagnostics[collectedExpressionDiagnostics...] where diagnostic.severity == .warning {
+            record(diagnostic)
+        }
+        collectedExpressionDiagnostics = diagnostics.count
+    }
+
+    /// Records a warning unless an equal warning has been recorded in this run.
+    ///
+    /// - Parameter warning: The warning.
+    /// - Returns: Whether the warning was recorded.
+    @discardableResult
+    private func record(_ warning: SourceDiagnostic) -> Bool {
+        guard recordedWarnings.insert(warning).inserted else { return false }
+        recordedWarningList.append(warning)
+        return true
     }
 
     /// Tells the handler about the current progress.
