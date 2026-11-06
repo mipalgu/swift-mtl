@@ -194,5 +194,6 @@ do {
 
 ### Next steps
 
-Read <doc:UnderstandingMTL> for how invocations are resolved, how whitespace is handled
-and which parts of the Acceleo standard library are not available yet.
+Read <doc:UnderstandingMTL> for how invocations are resolved, how whitespace is handled,
+how generated files are merged on regeneration, and which limits remain. Read
+<doc:Compatibility> to keep the behaviour of version 0.6.

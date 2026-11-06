@@ -27,12 +27,11 @@ The workflow has three steps. ``MTLParser`` turns template files or source text 
 ``MTLGenerationStrategy`` decides where the generated text goes: ``MTLInMemoryStrategy``
 collects it in memory and ``MTLFileSystemStrategy`` writes it to disk.
 
-### Current limits
-
-The swift-aql release that MTL builds on lacks most of the Acceleo standard library, such
-as the string services `toUpperFirst` and `replaceAll` and the collection services
-`sortedBy`, `asSet` and `sum`. These expressions parse, but evaluation needs a later
-swift-aql release. See <doc:UnderstandingMTL> for details.
+Beyond the core language, the package supports deferred `[collect]` and `[emit]` blocks,
+`[merge]` regeneration merging, `[layout]` code style conversion, protected areas that are
+preserved on regeneration, generator options and file post-processors, global variables and
+named parameters, and services for editors and other hosts. See <doc:UnderstandingMTL> for
+details.
 
 ## Topics
 
