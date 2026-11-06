@@ -19,7 +19,10 @@ let generator = MTLGenerator(module: module, generationStrategy: strategy, optio
 The initialisers of version 0.6, without an `options` argument, keep their signatures and
 their behaviour: they use ``MTLOptions/legacy`` with the given
 ``MTLOptions/unsetFeatureReads``. They are deprecated in favour of the initialisers that take
-options. ``MTLQueryHelpers/helpers(for:generator:)`` and
+options. Likewise, ``MTLQueryHelper/init(name:parameterTypes:returnType:call:)`` is
+deprecated in favour of
+``MTLQueryHelper/init(name:parameterTypes:returnType:collectionParameters:call:)``.
+``MTLQueryHelpers/helpers(for:generator:)`` and
 ``MTLQueryServices/init(module:generator:)`` without a generator also use the options of
 version 0.6, while ``MTLQueryHelpers/helpers(for:options:)`` and
 ``MTLQueryServices/init(module:options:)`` take options.
@@ -27,8 +30,8 @@ version 0.6, while ``MTLQueryHelpers/helpers(for:options:)`` and
 ``MTLOptions/init(semantics:)`` selects ``MTLOptions/standard`` or ``MTLOptions/legacy`` from
 a `ModellingSemantics` value, and ``MTLOptions/fromEnvironment(_:)`` reads that choice from the
 `SWIFT_MODELLING_SEMANTICS` environment variable (`standard` or `legacy`;
-``MTLOptions/standard`` if it is unset). A generator keeps the options it is created with for
-every template it runs:
+``MTLOptions/standard`` if it is unset, and an error for any other value). A generator keeps
+the options it is created with for every template it runs:
 
 ```swift
 let generator = MTLGenerator(
@@ -52,3 +55,14 @@ variable may now declare a qualified or collection type, such as `ecore::EClass`
 `Sequence(String)`, and a directive missing its `]` is reported where it opens, with the code
 ``MTLDiagnosticCode/unterminatedDirective``. Generation statistics also report warnings in
 ``MTLGenerationStatistics/warnings``.
+
+### Further options
+
+Two options are not part of the change from version 0.6 and keep the same default in both
+presets. ``MTLOptions/letTypeMismatches`` makes a `let` value that does not conform to its
+declared type a type error (``MTLLetTypeMismatches/error``) or skips the block with a warning
+(``MTLLetTypeMismatches/skip``), and ``MTLOptions/unsetFeatureReads`` reads unset features as
+their defaults or as `nil`. ``MTLOptions/aql`` accepts any combination of the swift-aql
+options, and containers are found as its `containerLookup` option says. The raw values of the
+option enumerations, such as `acceleo`, `kept`, `conforming`, `exact`, `error` and `skip`,
+double as command-line spellings.

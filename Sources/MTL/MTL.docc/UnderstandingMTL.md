@@ -5,8 +5,7 @@ The concepts behind modules, invocations, whitespace handling, file output and p
 ## Overview
 
 This article describes how the MTL package interprets the MOFM2T / Acceleo dialect. It
-covers what the language does today, including the limits that come from the current
-swift-aql release.
+covers what the language does today and the limits that remain.
 
 ## Modules
 
@@ -170,7 +169,9 @@ For `[name(args)/]` the runtime looks for a matching element in this order:
 1. elements declared in the current module, including private ones;
 2. public and protected elements of the modules it extends;
 3. public elements of imported modules and of their parent modules;
-4. the AQL library (functions such as `min`, `max`, `abs` and `toString`).
+4. services registered with the generator or the execution context (see
+   <doc:UnderstandingMTL#AQL-services>);
+5. the AQL standard library (functions such as `min`, `max`, `abs` and `toString`).
 
 Imports are not transitive. Protected and private elements are never visible through an
 import, and protected elements are visible only to extending modules. The receiver form
@@ -225,6 +226,50 @@ throws ``MTLModuleResolutionError/cycle(_:)`` and a missing module throws
 ``MTLModuleResolutionError/notFound(module:searched:requiredBy:)``. ``MTLParser`` performs
 the same work when parsing a file, and ``MTLParser/parseWithoutLinking(_:)`` skips it.
 
+To link without touching the file system, for example from the documents an editor has open,
+give the parser an ``MTLModuleSource``, which returns the text and a location for a module
+name. The linker asks the source first and falls back to the search paths for modules it
+does not know:
+
+```swift
+let parser = MTLParser(moduleSource: openDocuments)
+let module = try await parser.link(try await parser.parse(text, filename: "main.mtl"))
+```
+
+## AQL services
+
+Operations written as `receiver.name(args)`, `receiver->name(args)` and `name(args)` that
+are not templates, queries or macros of the module are resolved against registered AQL
+services, and finally against the AQL standard library. Register additional services through
+the generator or the execution context:
+
+```swift
+import AQL
+
+struct GreetingServices: AQLServiceProvider {
+    var services: [AQLService] {
+        [AQLService("greet", receiver: .string, arity: 1) { call in
+            "\(try call.string(0)), \(try call.receiverString())"
+        }]
+    }
+}
+
+let generator = MTLGenerator(
+    module: module, generationStrategy: strategy, options: .standard,
+    serviceProviders: [GreetingServices()])
+generator.register(GreetingServices())  // later registrations take precedence
+```
+
+Every model passed to ``MTLGenerator/generate(mainTemplate:arguments:models:)`` or registered
+with ``MTLExecutionContext/registerModel(_:resource:)`` is also made known to AQL, so
+`eContainer()` and `allInstances()` can see its objects. The AQL library counts strings and
+collections from one (`'hello'.substring(1, 2)`, `seq->at(1)`).
+
+With ``MTLOptions/cachesContainers`` set (the default), the container of each model object is
+looked up once during a generation run and reused by `eContainer()`, `ancestors()` and the
+sibling services. Templates do not change their models; a service that does must be created
+with `modifiesModels: true`, so that later containment queries see the change.
+
 ## Whitespace
 
 MTL follows the MOFM2T rule for standalone lines. A line holding only block tags (template,
@@ -274,10 +319,82 @@ from the generation strategy. The mode is one of:
 
 An unknown mode string is a syntax error. The charset is honoured by the bundled
 strategies (``MTLCharset``): UTF-8, UTF-16, UTF-16BE, UTF-16LE, ISO-8859-1 and US-ASCII.
-A character the charset cannot represent is an error. Further `'key=value'` options may
-follow the charset (``MTLFileOptions``): `'merge=false'` excludes the file from the
-module's `[merge]` declaration. The built-in `fileExists(path)` and `forceOverwrite()`
-services let a template inspect the file context. A file block on its own lines contributes only its content.
+A character the charset cannot represent, or an unsupported charset, is an error and
+nothing is written. Further `'key=value'` options may follow the charset
+(``MTLFileOptions``): `'merge=false'` excludes the file from the module's `[merge]`
+declaration and `'layout=false'` from its `[layout]` declaration. A file block on its own
+lines contributes only its content.
+
+Two built-in services expose the file context to templates:
+
+- `fileExists(path)` is true if a file exists at the path, relative to the generation base
+  path (or absolute). Files written earlier in the same run count.
+- `forceOverwrite()` returns the `forceOverwrite` generator option.
+
+```mtl
+[if (not fileExists('plugin.xml'))]
+[file ('build.properties')]...[/file]
+[/if]
+```
+
+## Collected sets and deferred blocks
+
+Values such as imports or includes can be gathered while a file is generated and rendered
+once the file body is complete. Sets are scoped to the enclosing `[file]` block, keep
+insertion order and ignore duplicates.
+
+```mtl
+[collect ('imports', 'a.b.C')/]
+[collect ('imports', typeNames)/]
+[emit ('imports') in(items->sortedBy(s | s)) separator('\n')]import [item/];[/emit]
+```
+
+- `[collect ('set', expr)/]` adds a string or a collection of strings.
+- `[emit ('set') ...]...[/emit]` marks where the set is rendered. The block is rendered once
+  per element with `item` bound to the element and `items` bound to the whole collection.
+  Optional clauses: `separator(text)` between elements, `in(expr)` to sort, group or filter
+  the elements (evaluated with `items` bound), and `once` to render the block a single time
+  with `items` bound and `item` unbound. Emit blocks cannot be nested.
+- `collected('set')` returns the values collected so far, for example for conflict checks.
+
+## Regeneration merge
+
+A module can declare how an existing target file is merged with new output:
+
+```mtl
+[merge ('/**', '*/', '@generated', '@generated NOT', 'braces')/]
+```
+
+The arguments are the start and end of a leading comment (an empty end means a line
+comment), the generated tag, the keep tag and the strategy (`braces` or `indentation`, by
+default `braces`). Further `'key=value'` arguments adjust the lexical conventions:
+`lineComments` (space-separated markers), `blockComment` (start and end separated by a
+space), `quotes`, `terminators` (characters that end a member; `\n` for languages whose
+statements end at a line break), `opener` and `files`.
+
+`files` restricts the merge to matching files, as a space-separated list of glob patterns
+such as `'files=*.java'`. `*` matches any characters except `/`, `**` matches any
+characters, and `?` matches one character. A pattern without `/` is matched against the
+last path component of the file URL, any other pattern against the whole URL. Files that do
+not match, and file blocks with the `'merge=false'` option, are written as plain overwrites.
+Without `files` the merge applies to every file.
+
+When the target exists and force overwrite is off, blocks whose leading comment contains the
+keep tag, or no tag at all, are preserved; blocks with the generated tag are replaced; new
+tagged blocks are added; and generated blocks that are no longer produced are removed.
+Blocks are matched by normalised signature within the matching parent. Lines of an `[emit]`
+region present in the old file but missing from the new one are kept.
+
+Only the leading comment of a block, written in the declared comment form, carries the
+tags. Tags in other comments (line comments inside a body, comments of another form, or
+comments further above that are not part of the leading comment) and in string literals
+are ignored, so a generated method whose body mentions the keep tag is replaced as a whole.
+When the comment end is empty, only the unbroken run of line comments directly above the
+block counts; a blank line ends the run.
+
+A generated block that contains tagged members is merged member by member: its header and
+closing line come from the new text, and kept members retain their text verbatim. A kept
+container stays exactly as it is in the existing file.
 
 ## Layout conversion
 
@@ -286,15 +403,18 @@ layout of generated files to a code style without any knowledge of the target la
 (``MTLLayoutConfiguration``). Each leading indentation unit is replaced, and with
 `opener=sameLine` an opener that stands alone on its line moves to the end of the preceding
 line unless that line ends in a statement terminator or a comment, or is itself an opener.
-Comments and string literals are never altered by opener placement, and the comment markers,
-quotes, terminators and opener token are data of the declaration.
+Comments and string literals are never altered by opener placement. The comment markers
+(`lineComments`, `blockComment`), `quotes`, `terminators` and opener token (`openerToken`,
+by default `{`) are data of the declaration, and `files` scopes it with the same globs as
+`[merge]`.
 
 Layout conversion runs on the freshly generated text before it is merged with an existing
 file, so that the merge compares like with like, and protected areas preserved from an
 existing file are left as they are. The generator option ``MTLGeneratorOptions/layout``
 overrides the module declaration, `'layout=false'` on a `file` block opts that file out
 (``MTLFileOptions``), and ``MTLLayoutPostProcessor`` applies a configuration as a
-post-processor.
+post-processor. After a layout change, regenerated headers and closing lines of merged
+blocks follow the new layout, and a second run changes nothing.
 
 ## Protected areas
 
@@ -312,12 +432,12 @@ The marker lines can be preceded by prefixes, positionally as
 file extension.
 
 If the execution context already holds content for that identifier, it is written instead
-of the body. Content can be supplied with
-``MTLExecutionContext/setProtectedAreaContent(_:content:markers:)`` or directly on an
-``MTLProtectedAreaManager``, which can also scan text or a file for existing regions with
-``MTLProtectedAreaManager/scanContent(_:)`` and ``MTLProtectedAreaManager/scanFile(_:)``.
-Automatic scanning of the files about to be overwritten by a generation run is not part
-of the package yet.
+of the body. When a file block overwrites an existing file, the protected areas of that file
+are read first, so their content is preserved automatically on regeneration. Content can
+also be supplied with ``MTLExecutionContext/setProtectedAreaContent(_:content:markers:)`` or
+directly on an ``MTLProtectedAreaManager``, which can scan text or a file for existing
+regions with ``MTLProtectedAreaManager/scanContent(_:)`` and
+``MTLProtectedAreaManager/scanFile(_:)``.
 
 ## Generation strategies and the execution context
 
@@ -335,18 +455,120 @@ for ``MTLFileSystemStrategy/standardOutput`` or passes it to a handler, as chose
 scopes, the current ``MTLIndentation``, protected areas and trace links
 (``MTLTraceLink``). Implement the protocol to send output elsewhere.
 
+### Generator options and post-processing
+
+``MTLFileSystemStrategy`` and ``MTLInMemoryStrategy`` accept ``MTLGeneratorOptions``
+(``MTLGeneratorOptions/forceOverwrite``, ``MTLGeneratorOptions/redirectionPattern`` such as
+`.{0}.new`, ``MTLGeneratorOptions/lineDelimiter`` and ``MTLGeneratorOptions/layout``) and an
+ordered list of ``MTLFilePostProcessor`` values that transform the content before it is
+written.
+
+Line endings in generated output follow the template text: templates with CRLF line endings
+parse like LF ones and produce CRLF output. Setting ``MTLGeneratorOptions/lineDelimiter`` to
+a value other than `"\n"` rewrites every line ending in the written file to that delimiter.
+On Windows, keep template files byte-exact with a `.gitattributes` entry such as
+`*.mtl -text` if the output must use LF.
+
+### Progress and cancellation
+
+``MTLGenerator/generate(mainTemplate:arguments:models:progress:)`` reports an
+``MTLProgress`` (templates executed, files written, the current template and file) on the
+main actor. Generation checks for task cancellation at the start of every block and loop
+iteration and regularly lets other work on the main actor proceed, so a cancelled run throws
+`CancellationError` and a run on the main actor keeps the user interface responsive.
+
+## Global variables and parameters
+
+Global variables are visible to every template, query and macro, and are read like any other
+variable (`[name/]`). Set them before generating, either through the initialiser or with
+``MTLGenerator/setGlobalVariable(_:value:)``:
+
+```swift
+let generator = MTLGenerator(
+    module: module, generationStrategy: strategy, options: .standard, globals: ["version": "1.2"])
+generator.setGlobalVariable("author", value: "A. Person")
+```
+
+A template parameter or `let` variable of the same name hides a global inside its own scope
+only. Templates, queries and macros are invoked with parentheses, so they never clash with a
+global of the same name.
+
+``MTLParameterServices`` turns `name=value` text, for example from command-line options, into
+global variables and services. Names must be identifiers that the syntax does not reserve;
+`true` and `false` become Booleans, canonical whole numbers become integers, and everything
+else is a string:
+
+```swift
+let parameters = try MTLParameterServices(arguments: ["package=org.example", "verbose=true"])
+parameters.bind(to: generator)   // [package/] now reads the value
+generator.register(parameters)   // parameter('package') and hasParameter('package')
+```
+
+Use ``MTLParameterServices/init(parameters:)`` for text values,
+``MTLParameterServices/init(values:)`` for typed values, and
+``MTLParameterServices/parse(_:)`` to read a single `name=value`. Problems throw
+``MTLParameterError``.
+
+### Text resources
+
+``MTLResourceServices`` lets templates emit text files that are shipped beside them, such as
+support headers or licence texts, without copying that text into a template. Give it one or
+more root directories, searched in order; ``MTLResourceServices/init(module:roots:)``
+searches the directory of the parsed module first:
+
+```swift
+let module = try await MTLParser().parse(templateURL)
+generator.register(MTLResourceServices(module: module, roots: [sharedResources]))
+```
+
+`resourceText('support/a.h')` returns the file content exactly as stored, and
+`resourceExists('support/a.h')` tells whether a root contains the file, so that
+`[file ('a.h', false, 'UTF-8')][resourceText('support/a.h')/][/file]` writes it verbatim.
+Paths are relative; empty or absolute paths, drive names and `..` components are rejected.
+Missing files, files that are not UTF-8 text and invalid paths throw
+``MTLResourceServicesError``.
+
+### Calling queries from other hosts
+
+``MTLQueryHelpers/helpers(for:generator:)`` and ``MTLQueryHelpers/helpers(for:options:)``
+list the `[query]` definitions of a module and the public queries of its imports as
+``MTLQueryHelper`` values, each with a name, parameter types, return type and an
+asynchronous `call` closure. The first argument is the receiver, the first declared
+parameter, so `e.render('c')` maps onto `render(e : Expression, lang : String)`.
+``MTLQueryHelpers/call(_:arguments:among:)`` picks the overload that fits the arguments,
+matching collection arguments as the ``MTLOptions/collectionParameters`` of the generator's
+options say. Queries that follow references need the models that hold the objects: register
+them with ``MTLGenerator/registerModel(_:resource:)`` on the generator that you pass in.
+``MTLQueryServices`` offers the same queries to AQL-based hosts as services, callable as
+`e.render('c')` and `render(e, 'c')`:
+
+```swift
+let generator = MTLGenerator(
+    module: module, generationStrategy: MTLInMemoryStrategy(), options: .standard)
+await generator.registerModel("IN", resource: resource)
+let helpers = MTLQueryHelpers.helpers(for: module, generator: generator)
+let text = try await MTLQueryHelpers.call("render", arguments: [element, "c"], among: helpers)
+generator.register(MTLQueryServices(module: module, generator: generator))
+```
+
+## Editor support
+
+``MTLParser/parseDiagnosing(_:filename:)`` parses without stopping at the first mistake. It
+skips to the end of a broken directive (or to the matching closing tag of a broken block)
+and to the end of a broken template, query or macro, and returns the module that could be
+read, the diagnostics (`SourceDiagnostic` values with ranges and stable
+``MTLDiagnosticCode`` codes) and an outline of the module. ``MTLSyntax/tokens(in:)`` splits
+template text, directives and expressions into highlighting tokens and never fails. Parsed
+statements, declarations and expressions carry an `origin` with their range in the source
+text; origins never take part in equality.
+
 ## Limits
 
-- The swift-aql release this package builds on lacks most of the Acceleo standard
-  library. String services such as `toUpperFirst`, `replaceAll` and `tokenize`, and
-  collection services such as `sortedBy`, `asSet`, `including`, `sum`, `reverse` and `at`,
-  are parsed but cannot be evaluated yet. Neither can `div`.
-- `toString` of a number prints `Optional(7)`, `trim()` does not remove line breaks, and
-  `String + Integer` is a type error.
-- Method-style calls on collections such as `coll.size()` do not evaluate. Write
-  `coll->size()`.
-- Qualified type names in `oclIsKindOf(ecore::EClass)` are passed as the full string, and
-  the released AQL compares unqualified names for dynamic objects only.
-- Protected area scanning of existing files, deferred blocks, tagged-block merging and
-  post-processors are not part of the package.
+- Types are matched by classifier name. A package qualifier, as in
+  `oclIsKindOf(ecore::EClass)`, does not restrict the match.
+- No protected area marker prefix is derived from the file extension; prefixes are given in
+  the `protected` block.
+- Only the charsets listed under <doc:UnderstandingMTL#File-blocks-and-modes> are
+  supported.
+- Macros have no visibility.
 - Imports are not transitive.

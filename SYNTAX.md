@@ -2,9 +2,9 @@
 
 This document describes the dialect of the OMG MOFM2T / Acceleo model-to-text
 language implemented by swift-mtl. Every construct described here is parsed by
-`MTLParser` and covered by the package tests. Where a construct parses but cannot
-yet be evaluated, the text says so (see
-[Differences from Acceleo and current limits](#differences-from-acceleo-and-current-limits)).
+`MTLParser` and covered by the package tests. The remaining differences from
+Acceleo are listed under
+[Differences from Acceleo and current limits](#differences-from-acceleo-and-current-limits).
 
 Expressions are swift-aql expressions: the parser builds swift-aql AST nodes,
 and models are read through swift-ecore.
@@ -248,8 +248,8 @@ text; its result replaces the text.
 ```
 
 When the expression yields a Boolean, it acts as a post-condition instead of
-transforming the text. Evaluating text services such as `trim()` depends on the
-swift-aql release (see the limits below).
+transforming the text. `post (trim())` removes surrounding white space,
+including line breaks.
 
 ### Overrides
 
@@ -528,7 +528,7 @@ From loosest to tightest binding:
 | 3 | `and` | |
 | 4 | `=`, `<>`, `<`, `>`, `<=`, `>=` | comparison |
 | 5 | `+`, `-` | |
-| 6 | `*`, `/`, `mod`, `div` | `div` is parsed only, see the limits |
+| 6 | `*`, `/`, `mod`, `div` | `div` is integer division |
 | 7 | unary `not`, unary `-` | |
 | 8 | `.`, `->`, calls | |
 
@@ -570,7 +570,9 @@ An iterator body may name its variable (`x | body` or `x : T | body`) or omit it
 Without an iterator variable, `self` is the implicit iterator and the implicit
 receiver, so `->select(oclIsKindOf(EClass))` tests each element.
 
-Which names can be evaluated depends on the swift-aql release. Parsing does not.
+Other names, such as `sortedBy`, `asSet`, `including`, `sum`, `reverse` and
+`at`, are evaluated by the swift-aql standard library. Method-style calls on
+collections, such as `coll.size()`, evaluate as well.
 
 ## Escapes
 
@@ -667,30 +669,13 @@ binding     ::= name [':' type] '=' expr
 swift-mtl follows the OMG MOFM2T text and the Acceleo 3 syntax
 with the following differences and limits.
 
-Expression services:
-
-- The released swift-aql library lacks most of the Acceleo standard library.
-  String services (`toUpperFirst`, `replaceAll`, `tokenize` and others) and
-  collection services (`sortedBy`, `asSet`, `including`, `sum`, `reverse`, `at`
-  and others) are parsed but are not evaluated yet.
-- `div` is parsed, but swift-aql cannot evaluate it yet.
-- `toString` of a number currently prints `Optional(7)`.
-- `trim()` does not remove line breaks.
-- `String + Integer` is a type error.
-- Method-style calls on collections, such as `coll.size()`, do not evaluate.
-  Use `coll->size()`.
-- Evaluation of all of the above is expected with the next swift-aql release.
-
 Types:
 
-- A qualified type name in `oclIsKindOf(ecore::EClass)` is passed as the full
-  string. The released swift-aql compares unqualified names, and only for dynamic
-  objects.
+- Types are matched by classifier name. A package qualifier, as in
+  `oclIsKindOf(ecore::EClass)`, does not restrict the match.
 
 Protected areas and files:
 
-- Scanning existing files for protected areas, deferred blocks, tagged-block
-  merging and post-processors are not part of this package yet.
 - The protected area markers are `START PROTECTED REGION id` and
   `END PROTECTED REGION id` preceded by the configured prefixes. No default
   prefixes are derived from the file extension.

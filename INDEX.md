@@ -4,7 +4,7 @@ swift-mtl is a Swift library (product `MTL`) for model-to-text transformation wi
 
 ## Documentation
 
-- [README.md](README.md): overview, installation, quick start, syntax tour, known limits
+- [README.md](README.md): overview, installation, quick start
 - [SYNTAX.md](SYNTAX.md): full syntax reference
 - [Examples/README.md](Examples/README.md): the example templates
 - [Tests/MTLTests/README.md](Tests/MTLTests/README.md): the test suites and fixtures
