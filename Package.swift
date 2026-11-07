@@ -33,6 +33,19 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "MTLMultiLevelTests",
+            dependencies: [
+                "MTL",
+                .product(name: "AQL", package: "swift-aql"),
+                .product(name: "AQLMultiLevel", package: "swift-aql"),
+                .product(name: "ECore", package: "swift-ecore"),
+                .product(name: "MultiLevel", package: "swift-ecore"),
+            ],
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency")
+            ]
+        ),
+        .testTarget(
             name: "MTLTests",
             dependencies: [
                 "MTL",
