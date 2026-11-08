@@ -75,6 +75,14 @@ public struct MTLOptions: Sendable, Equatable, Hashable {
     /// Framework does. The setting applies to the execution engine that an initialiser creates.
     public var unsetFeatureReads: UnsetFeatureReads
 
+    /// The text that a template writes for a model object.
+    ///
+    /// The default, ``MTLObjectText/acceleo``, writes the name of the class of the object and
+    /// the values of its attributes, as Acceleo does apart from the Java class name and hash
+    /// code. ``MTLObjectText/swift`` writes the Swift description of the object, as in
+    /// version 0.6.
+    public var objectText: MTLObjectText
+
     /// Creates options, by default with the behaviour documented for this release.
     ///
     /// - Parameters:
@@ -92,6 +100,8 @@ public struct MTLOptions: Sendable, Equatable, Hashable {
     ///     while a generator runs (default: `true`).
     ///   - unsetFeatureReads: How templates read structural features that have not been set
     ///     (default: `UnsetFeatureReads/defaults`).
+    ///   - objectText: The text that a template writes for a model object
+    ///     (default: ``MTLObjectText/acceleo``).
     public init(
         aql: AQLOptions = .standard,
         blockLineBreaks: MTLBlockLineBreaks = .acceleo,
@@ -99,7 +109,8 @@ public struct MTLOptions: Sendable, Equatable, Hashable {
         checksLetTypes: Bool = true,
         letTypeMismatches: MTLLetTypeMismatches = .error,
         cachesContainers: Bool = true,
-        unsetFeatureReads: UnsetFeatureReads = .defaults
+        unsetFeatureReads: UnsetFeatureReads = .defaults,
+        objectText: MTLObjectText = .acceleo
     ) {
         self.aql = aql
         self.blockLineBreaks = blockLineBreaks
@@ -108,6 +119,7 @@ public struct MTLOptions: Sendable, Equatable, Hashable {
         self.letTypeMismatches = letTypeMismatches
         self.cachesContainers = cachesContainers
         self.unsetFeatureReads = unsetFeatureReads
+        self.objectText = objectText
     }
 
     /// The behaviour documented for this release.
@@ -119,8 +131,8 @@ public struct MTLOptions: Sendable, Equatable, Hashable {
     ///
     /// The expression language follows `AQLOptions/legacy`, line breaks after blocks written
     /// on one line are kept, collection types are matched as in version 0.6, declared `let`
-    /// types are not checked, and containers are looked up afresh every time. Unset features
-    /// read as their defaults.
+    /// types are not checked, containers are looked up afresh every time, and model objects are
+    /// written as their Swift descriptions. Unset features read as their defaults.
     public static let legacy = MTLOptions(
         aql: .legacy,
         blockLineBreaks: .kept,
@@ -128,7 +140,8 @@ public struct MTLOptions: Sendable, Equatable, Hashable {
         checksLetTypes: false,
         letTypeMismatches: .error,
         cachesContainers: false,
-        unsetFeatureReads: .defaults
+        unsetFeatureReads: .defaults,
+        objectText: .swift
     )
 
     /// Creates the options that a choice of semantics selects.

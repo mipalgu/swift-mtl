@@ -10,8 +10,8 @@
 ///
 /// A `let` variable may declare a type, as in `[let names : Sequence(String) = e]`. By default a
 /// value that does not conform to that type is a type error that stops the generation, as for a
-/// template parameter. The OMG MOFM2T specification and Acceleo 3 instead treat a typed `let` as
-/// a type test, whose body is generated only if the value conforms; ``skip`` follows them and
+/// template parameter. The [OMG MOFM2T specification](https://www.omg.org/spec/MOFM2T/1.0) and
+/// Acceleo 3 instead treat a typed `let` as a type test, whose body is generated only if the value conforms; ``skip`` follows them and
 /// also reports a warning, so that the mismatch does not go unnoticed. `null` conforms to every
 /// type in either mode.
 ///

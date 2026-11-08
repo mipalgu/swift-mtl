@@ -103,7 +103,8 @@ public struct MTLCollectStatement: MTLStatement {
     public func execute(in context: MTLExecutionContext) async throws {
         let name = try await MTLDeferredSupport.name(of: setName, in: context)
         let result = try await value.evaluate(in: context)
-        context.collect(MTLDeferredSupport.strings(from: result), into: name)
+        context.collect(
+            MTLDeferredSupport.strings(from: result, objectText: context.options.objectText), into: name)
     }
 }
 
@@ -255,15 +256,21 @@ enum MTLDeferredSupport {
     }
 
     /// Flattens a value into the strings to collect; `nil` yields nothing.
-    static func strings(from value: (any EcoreValue)?) -> [String] {
+    ///
+    /// - Parameters:
+    ///   - value: The value to flatten.
+    ///   - objectText: The text to collect for a model object.
+    /// - Returns: The text of each element of a collection, or of the value itself.
+    static func strings(from value: (any EcoreValue)?, objectText: MTLObjectText) -> [String] {
         guard let value else { return [] }
         if let array = value as? EcoreValueArray {
-            return array.values.flatMap { strings(from: $0) }
+            return array.values.flatMap { strings(from: $0, objectText: objectText) }
         }
         if let array = value as? [any EcoreValue] {
-            return array.flatMap { strings(from: $0) }
+            return array.flatMap { strings(from: $0, objectText: objectText) }
         }
         if let string = value as? String { return [string] }
+        if let object = value as? any EObject { return [objectText.text(of: object)] }
         return ["\(value)"]
     }
 }

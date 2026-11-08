@@ -47,6 +47,7 @@ details.
 - ``MTLBlockLineBreaks``
 - ``MTLCollectionParameters``
 - ``MTLLetTypeMismatches``
+- ``MTLObjectText``
 
 ### Parsing and Modules
 
