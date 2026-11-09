@@ -5,6 +5,7 @@
 //  Copyright (c) 2026 Rene Hexel. All rights reserved.
 //
 
+import EMFBase
 import Foundation
 
 // MARK: - Charset
@@ -33,6 +34,9 @@ public enum MTLCharset: Sendable, Equatable, Hashable {
 
     /// US-ASCII.
     case ascii
+
+    /// The Windows code page 1252, a superset of the printable characters of ISO-8859-1.
+    case windows1252
 
     /// Resolves a charset name.
     ///
@@ -73,6 +77,20 @@ public enum MTLCharset: Sendable, Equatable, Hashable {
         case .utf16LittleEndian: return .utf16LittleEndian
         case .latin1: return .isoLatin1
         case .ascii: return .ascii
+        case .windows1252: return .windowsCP1252
+        }
+    }
+
+    /// The text encoding of the shared modelling libraries that writes the same bytes.
+    public var textEncoding: TextEncoding {
+        switch self {
+        case .utf8: return .utf8
+        case .utf16: return .utf16
+        case .utf16BigEndian: return .utf16BigEndian
+        case .utf16LittleEndian: return .utf16LittleEndian
+        case .latin1: return .isoLatin1
+        case .ascii: return .usASCII
+        case .windows1252: return .windows1252
         }
     }
 
@@ -81,16 +99,46 @@ public enum MTLCharset: Sendable, Equatable, Hashable {
     /// - Parameters:
     ///   - text: The text to encode.
     ///   - path: The path of the file, used in the error message.
+    /// In the single-byte charsets, the text is first precomposed (Unicode normalisation form C),
+    /// so that a letter followed by a combining mark is written as the single character that the
+    /// charset holds. UTF-8 and UTF-16 are written as the text is.
+    ///
     /// - Returns: The encoded bytes, including a byte order mark where the charset has one.
-    /// - Throws: `MTLExecutionError.fileError` naming the first character that the charset cannot represent.
+    /// - Throws: `MTLExecutionError.fileError` naming the first character that the charset cannot
+    ///   represent, with its line and column.
     public func encode(_ text: String, path: String) throws -> Data {
+        if self == .latin1 || self == .ascii || self == .windows1252 {
+            do {
+                return try textEncoding.encode(text)
+            } catch {
+                throw Self.unrepresentable(error, path: path)
+            }
+        }
         guard let data = text.data(using: encoding, allowLossyConversion: false) else {
-            let unrepresentable = text.first { String($0).data(using: encoding, allowLossyConversion: false) == nil }
-            let description = unrepresentable.map { "'\($0)' (U+" + Self.hexadecimal($0) + ")" } ?? "a character"
+            do {
+                _ = try textEncoding.encode(text)
+            } catch {
+                throw Self.unrepresentable(error, path: path)
+            }
             throw MTLExecutionError.fileError(
-                "Cannot write \(description) to \(path): it is not representable in the file's charset")
+                "Cannot write a character to \(path): it is not representable in the file's charset")
         }
         return Data(byteOrderMark) + data
+    }
+
+    /// The error for a character that the charset cannot represent.
+    ///
+    /// - Parameters:
+    ///   - error: The error of encoding the text.
+    ///   - path: The path of the file.
+    /// - Returns: An error that names the character, the file, and the line and column of the character.
+    private static func unrepresentable(_ error: TextEncodingError, path: String) -> MTLExecutionError {
+        switch error {
+        case .unrepresentable(let character, _, let position):
+            return MTLExecutionError.fileError(
+                "Cannot write '\(character)' (U+\(hexadecimal(Character(character)))) at line \(position.line), "
+                    + "column \(position.column) to \(path): it is not representable in the file's charset")
+        }
     }
 
     /// Decodes the bytes of an existing file.
@@ -102,6 +150,7 @@ public enum MTLCharset: Sendable, Equatable, Hashable {
     public func decode(_ data: Data) -> String? {
         var bytes = data
         if bytes.starts(with: byteOrderMark) { bytes = bytes.dropFirst(byteOrderMark.count) }
+        if self == .windows1252 { return textEncoding.decode(bytes) }
         guard self == .utf8 else { return String(data: bytes, encoding: encoding) }
         let text = String(decoding: bytes, as: UTF8.self)
         return text.utf8.elementsEqual(bytes) ? text : nil

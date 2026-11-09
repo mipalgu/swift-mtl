@@ -748,9 +748,9 @@ public struct MTLFileStatement: MTLStatement {
         let charsetString: String
         if let charset = charset {
             let charsetResult = try await charset.evaluate(in: context)
-            charsetString = (charsetResult as? String) ?? MTLSyntax.defaultCharset
+            charsetString = (charsetResult as? String) ?? context.defaultCharset
         } else {
-            charsetString = MTLSyntax.defaultCharset
+            charsetString = context.defaultCharset
         }
 
         // Open file

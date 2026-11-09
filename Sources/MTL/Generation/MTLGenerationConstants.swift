@@ -219,6 +219,7 @@ public enum MTLCharsetNames {
         (.utf16LittleEndian, ["utf16le"]),
         (.latin1, ["iso88591", "latin1", "l1"]),
         (.ascii, ["usascii", "ascii"]),
+        (.windows1252, ["windows1252", "cp1252"]),
     ]
 
     /// The characters ignored when matching a charset name.

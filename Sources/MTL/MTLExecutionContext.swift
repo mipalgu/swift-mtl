@@ -799,6 +799,11 @@ public final class MTLExecutionContext: Sendable {
         generationStrategy.generatorOptions.forceOverwrite
     }
 
+    /// The charset of a `[file]` block that names none, from the options of the generation strategy.
+    public var defaultCharset: String {
+        generationStrategy.generatorOptions.defaultCharset
+    }
+
     // MARK: - Deferred Blocks
 
     /// Adds values to a collected set of the current output.
