@@ -889,6 +889,20 @@ public actor MTLParser {
     /// The source that supplies imported and extended modules before the search paths are tried.
     private let moduleSource: (any MTLModuleSource)?
 
+    /// The encoding in which module files are read, or `nil` to read UTF-8 and fall back to
+    /// ISO-8859-1.
+    public nonisolated let encoding: TextEncoding?
+
+    /// The warnings of decoding the files that the most recent call read.
+    ///
+    /// A module file that is not valid UTF-8 is read as ISO-8859-1 unless the parser has an
+    /// explicit ``encoding``, and a warning whose code is
+    /// `TextDecodingDiagnostic.decodedAsISOLatin1` names the file and its first byte that is
+    /// not UTF-8. Each call of ``parse(_:)``, ``parseWithoutLinking(_:)`` and
+    /// ``link(_:relativeTo:)`` replaces the list with the warnings of the files it read,
+    /// including imported and extended modules.
+    public private(set) var decodingWarnings: [SourceDiagnostic] = []
+
     // MARK: - Initialization
 
     /// Creates a parser.
@@ -899,13 +913,17 @@ public actor MTLParser {
     ///     after the directory of the importing file (default: none).
     ///   - moduleSource: A source that supplies imported and extended modules from memory
     ///     (default: none). It is asked before the file system is searched.
+    ///   - encoding: The encoding of module files, or `nil` (the default) to read UTF-8 and
+    ///     read a file that is not valid UTF-8 as ISO-8859-1, with a warning in
+    ///     ``decodingWarnings``.
     public init(
         enableDebugging: Bool = false, searchPaths: [URL] = [],
-        moduleSource: (any MTLModuleSource)? = nil
+        moduleSource: (any MTLModuleSource)? = nil, encoding: TextEncoding? = nil
     ) {
         self.enableDebugging = enableDebugging
         self.searchPaths = searchPaths
         self.moduleSource = moduleSource
+        self.encoding = encoding
     }
 
     // MARK: - Parsing
@@ -915,40 +933,55 @@ public actor MTLParser {
     /// Imported and extended modules are located relative to the file first,
     /// then in the search paths given to the initialiser, and are attached to
     /// the returned module so that their templates and queries can be called.
+    /// Every file is read in the ``encoding`` of the parser, and ``decodingWarnings``
+    /// lists the files that were read as ISO-8859-1 instead of UTF-8.
     ///
     /// - Parameter url: URL of the MTL file to parse
     /// - Returns: Parsed MTLModule with its imports and parent module attached
     /// - Throws: MTLParseError if parsing fails, MTLResourceError if a file cannot be read,
     ///   MTLModuleResolutionError if an imported or extended module is missing or cyclic
     public func parse(_ url: URL) async throws -> MTLModule {
-        let loader = MTLModuleLoader(
-            resolver: MTLModuleResolver(searchPaths: searchPaths),
-            moduleSource: moduleSource,
-            enableDebugging: enableDebugging
-        )
-        return try await loader.load(url)
+        decodingWarnings = []
+        var warnings: [SourceDiagnostic] = []
+        defer { decodingWarnings = warnings }
+        return try await loader.load(url, warnings: &warnings)
     }
 
     /// Parses an MTL template file without loading the modules it imports and extends.
     ///
-    /// The returned module records its location but lists its imports by name only.
+    /// The returned module records its location but lists its imports by name only. The
+    /// file is read in the ``encoding`` of the parser, and ``decodingWarnings`` reports a
+    /// file that was read as ISO-8859-1 instead of UTF-8.
     ///
     /// - Parameter url: URL of the MTL file to parse
     /// - Returns: Parsed MTLModule
     /// - Throws: MTLParseError if parsing fails, MTLResourceError if the file cannot be read
+    ///   or is not valid in the encoding of the parser
     public func parseWithoutLinking(_ url: URL) async throws -> MTLModule {
         debugPrint("Parsing MTL file: \(url.path)")
+        decodingWarnings = []
 
         // Read file
-        guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
+        guard let data = try? Data(contentsOf: url) else {
             throw MTLResourceError.loadError("Could not read file: \(url.path)")
         }
+        let decoded: DecodedText
+        do {
+            decoded = try DecodedText(decoding: data, encoding: encoding, document: url.absoluteString)
+        } catch {
+            let name = encoding?.name ?? TextEncoding.utf8.name
+            throw MTLResourceError.loadError("Could not read file: \(url.path) (not valid \(name))")
+        }
+        decodingWarnings = decoded.warning.map { [$0] } ?? []
 
-        let module = try await parse(contents, filename: url.lastPathComponent)
+        let module = try await parse(decoded.text, filename: url.lastPathComponent)
         return module.located(at: url)
     }
 
     /// Attaches the imports and parent module to a module parsed from source text.
+    ///
+    /// The modules that are read from files are read in the ``encoding`` of the parser, and
+    /// ``decodingWarnings`` lists those that were read as ISO-8859-1 instead of UTF-8.
     ///
     /// - Parameters:
     ///   - module: The module returned by ``parse(_:filename:)``.
@@ -957,12 +990,20 @@ public actor MTLParser {
     /// - Returns: The module with its imports and parent module attached
     /// - Throws: MTLModuleResolutionError if an imported or extended module is missing or cyclic
     public func link(_ module: MTLModule, relativeTo location: URL? = nil) async throws -> MTLModule {
-        let loader = MTLModuleLoader(
+        decodingWarnings = []
+        var warnings: [SourceDiagnostic] = []
+        defer { decodingWarnings = warnings }
+        return try await loader.link(module, relativeTo: location, warnings: &warnings)
+    }
+
+    /// The loader that reads the modules that a module imports and extends.
+    private var loader: MTLModuleLoader {
+        MTLModuleLoader(
             resolver: MTLModuleResolver(searchPaths: searchPaths),
             moduleSource: moduleSource,
-            enableDebugging: enableDebugging
+            enableDebugging: enableDebugging,
+            encoding: encoding
         )
-        return try await loader.link(module, relativeTo: location)
     }
 
     /// Parses MTL template source code.

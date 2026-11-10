@@ -6,6 +6,7 @@
 //  Copyright (c) 2026 Rene Hexel. All rights reserved.
 //
 
+import EMFBase
 import Foundation
 
 // MARK: - Module Resolution Errors
@@ -126,6 +127,10 @@ public struct MTLModuleLoader: Sendable {
 
     private let enableDebugging: Bool
 
+    /// The encoding in which module files are read, or `nil` to read UTF-8 and fall back to
+    /// ISO-8859-1.
+    public let encoding: TextEncoding?
+
     /// Creates a loader.
     ///
     /// - Parameters:
@@ -133,25 +138,44 @@ public struct MTLModuleLoader: Sendable {
     ///   - moduleSource: A source that supplies modules from memory (default: none). It is
     ///     asked first; modules it does not know are looked up with the resolver.
     ///   - enableDebugging: Whether the parser logs its progress.
+    ///   - encoding: The encoding of the module files, or `nil` (the default) to read UTF-8
+    ///     and read a file that is not valid UTF-8 as ISO-8859-1.
     public init(
         resolver: MTLModuleResolver = MTLModuleResolver(),
         moduleSource: (any MTLModuleSource)? = nil,
-        enableDebugging: Bool = false
+        enableDebugging: Bool = false,
+        encoding: TextEncoding? = nil
     ) {
         self.resolver = resolver
         self.moduleSource = moduleSource
         self.enableDebugging = enableDebugging
+        self.encoding = encoding
     }
 
     /// Loads a module file and everything it depends on.
+    ///
+    /// The files are read in the ``encoding`` of the loader. ``MTLParser/parse(_:)``
+    /// also reports the files that were read as ISO-8859-1 instead of UTF-8.
     ///
     /// - Parameter url: The module file.
     /// - Returns: The module with its imports and parent module attached.
     /// - Throws: `MTLParseError` for syntax errors, `MTLResourceError` if a file cannot be read,
     ///   `MTLModuleResolutionError` if a dependency is missing or cyclic.
     public func load(_ url: URL) async throws -> MTLModule {
+        var warnings: [SourceDiagnostic] = []
+        return try await load(url, warnings: &warnings)
+    }
+
+    /// Loads a module file and everything it depends on, collecting the warnings of decoding.
+    ///
+    /// - Parameters:
+    ///   - url: The module file.
+    ///   - warnings: Receives a warning for each file that was read as ISO-8859-1.
+    /// - Returns: The module with its imports and parent module attached.
+    /// - Throws: As for ``load(_:)``.
+    func load(_ url: URL, warnings: inout [SourceDiagnostic]) async throws -> MTLModule {
         var cache: [String: MTLModule] = [:]
-        return try await load(url, requiredBy: nil, stack: [], cache: &cache)
+        return try await load(url, requiredBy: nil, stack: [], cache: &cache, warnings: &warnings)
     }
 
     /// Attaches the dependencies of a module that was parsed from source text.
@@ -162,11 +186,26 @@ public struct MTLModuleLoader: Sendable {
     /// - Returns: The module with its imports and parent module attached.
     /// - Throws: As for ``load(_:)``.
     public func link(_ module: MTLModule, relativeTo location: URL? = nil) async throws -> MTLModule {
+        var warnings: [SourceDiagnostic] = []
+        return try await link(module, relativeTo: location, warnings: &warnings)
+    }
+
+    /// Attaches the dependencies of a module, collecting the warnings of decoding.
+    ///
+    /// - Parameters:
+    ///   - module: The parsed module.
+    ///   - location: The file the module came from, used to resolve relative imports; may be `nil`.
+    ///   - warnings: Receives a warning for each file that was read as ISO-8859-1.
+    /// - Returns: The module with its imports and parent module attached.
+    /// - Throws: As for ``load(_:)``.
+    func link(
+        _ module: MTLModule, relativeTo location: URL?, warnings: inout [SourceDiagnostic]
+    ) async throws -> MTLModule {
         var cache: [String: MTLModule] = [:]
         let stack = location.map { [Self.key(for: $0)] } ?? []
         return try await link(
             module.located(at: location ?? module.location), locationName: location?.path,
-            stack: stack, cache: &cache)
+            stack: stack, cache: &cache, warnings: &warnings)
     }
 
     // MARK: - Recursive Loading
@@ -175,7 +214,8 @@ public struct MTLModuleLoader: Sendable {
         _ url: URL,
         requiredBy: String?,
         stack: [String],
-        cache: inout [String: MTLModule]
+        cache: inout [String: MTLModule],
+        warnings: inout [SourceDiagnostic]
     ) async throws -> MTLModule {
         let key = Self.key(for: url)
         if let cycleStart = stack.firstIndex(of: key) {
@@ -185,8 +225,11 @@ public struct MTLModuleLoader: Sendable {
             return cached
         }
 
-        let parsed = try await MTLParser(enableDebugging: enableDebugging).parseWithoutLinking(url)
-        let linked = try await link(parsed, locationName: url.path, stack: stack + [key], cache: &cache)
+        let parser = MTLParser(enableDebugging: enableDebugging, encoding: encoding)
+        let parsed = try await parser.parseWithoutLinking(url)
+        warnings += await parser.decodingWarnings
+        let linked = try await link(
+            parsed, locationName: url.path, stack: stack + [key], cache: &cache, warnings: &warnings)
         cache[key] = linked
         return linked
     }
@@ -196,7 +239,8 @@ public struct MTLModuleLoader: Sendable {
         text: String,
         location: String,
         stack: [String],
-        cache: inout [String: MTLModule]
+        cache: inout [String: MTLModule],
+        warnings: inout [SourceDiagnostic]
     ) async throws -> MTLModule {
         let key = Self.sourceKey(for: location)
         if let cycleStart = stack.firstIndex(of: key) {
@@ -207,7 +251,8 @@ public struct MTLModuleLoader: Sendable {
         }
 
         let parsed = try await MTLParser(enableDebugging: enableDebugging).parse(text, filename: location)
-        let linked = try await link(parsed, locationName: location, stack: stack + [key], cache: &cache)
+        let linked = try await link(
+            parsed, locationName: location, stack: stack + [key], cache: &cache, warnings: &warnings)
         cache[key] = linked
         return linked
     }
@@ -220,33 +265,37 @@ public struct MTLModuleLoader: Sendable {
         for module: MTLModule,
         locationName: String?,
         stack: [String],
-        cache: inout [String: MTLModule]
+        cache: inout [String: MTLModule],
+        warnings: inout [SourceDiagnostic]
     ) async throws -> MTLModule {
         if let found = try await moduleSource?.source(forModule: name, importedFrom: locationName) {
             return try await load(
-                text: found.text, location: found.location, stack: stack, cache: &cache)
+                text: found.text, location: found.location, stack: stack, cache: &cache, warnings: &warnings)
         }
         let file = try resolver.locate(name, relativeTo: module.location, requiredBy: module.name)
-        return try await load(file, requiredBy: module.name, stack: stack, cache: &cache)
+        return try await load(file, requiredBy: module.name, stack: stack, cache: &cache, warnings: &warnings)
     }
 
     private func link(
         _ module: MTLModule,
         locationName: String?,
         stack: [String],
-        cache: inout [String: MTLModule]
+        cache: inout [String: MTLModule],
+        warnings: inout [SourceDiagnostic]
     ) async throws -> MTLModule {
         var imports: [MTLModule] = []
         for name in module.imports {
             imports.append(
                 try await resolve(
-                    name, for: module, locationName: locationName, stack: stack, cache: &cache))
+                    name, for: module, locationName: locationName, stack: stack, cache: &cache,
+                    warnings: &warnings))
         }
 
         var parent: MTLModule?
         if let name = module.extends {
             parent = try await resolve(
-                name, for: module, locationName: locationName, stack: stack, cache: &cache)
+                name, for: module, locationName: locationName, stack: stack, cache: &cache,
+                warnings: &warnings)
         }
 
         return module.linking(imports: imports, extending: parent)

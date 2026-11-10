@@ -242,7 +242,7 @@ struct MTLCollectionParameterTests {
         let model = ActionModel()
         let action = await model.makeAction()
         let output = try await model.output(Self.header + """
-            [template main(a : p::Action)][let ss : Sequence(Statement) = a.statements->first()][ss.size()/]:[ss.first().text/][/let],[let names : Sequence(String) = a.names][names.size()/][/let][/template]
+            [template main(a : p::Action)][let ss : Sequence(Statement) = a.statements->first()][ss->size()/]:[ss->first().text/][/let],[let names : Sequence(String) = a.names][names->size()/][/let][/template]
             """, on: action)
         #expect(output == "1:x,3")
     }

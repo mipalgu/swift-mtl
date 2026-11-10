@@ -698,7 +698,8 @@ public struct MTLGenerationStatistics: Sendable {
     /// The distinct warnings of the run, in the order in which they were first reported.
     ///
     /// Each warning is a `SourceDiagnostic` with the severity `warning`, a stable code from
-    /// ``MTLDiagnosticCode`` and, where known, the range of the construct in its template.
+    /// ``MTLDiagnosticCode``, or from `AQLDiagnosticCode` for a warning about an expression, and,
+    /// where known, the range of the construct in its template.
     /// Warnings are recorded whether or not the run succeeds; a warning that repeats an
     /// earlier one, such as the same mismatch in every iteration of a loop, is recorded once.
     public var warnings: [SourceDiagnostic] = []

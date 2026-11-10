@@ -263,7 +263,8 @@ extension MTLExecutionContext {
         let call = AQLCallExpression(
             source: source,
             methodName: invocation.name,
-            arguments: rest.map { AQLLiteralExpression(value: $0) }
+            arguments: rest.map { AQLLiteralExpression(value: $0) },
+            origin: invocation.origin
         )
         do {
             return try await call.evaluate(in: aqlContext)
@@ -585,13 +586,17 @@ extension MTLExecutionContext {
 
     /// The text an expression result contributes to the output.
     ///
-    /// Collections contribute the concatenated text of their elements.
+    /// Collections contribute the concatenated text of their elements, and model objects the
+    /// text that ``MTLOptions/objectText`` selects.
     ///
     /// - Parameter value: The evaluated expression.
     /// - Returns: The text to write.
     func renderedText(of value: any EcoreValue) -> String {
         if let array = value as? EcoreValueArray {
             return array.values.map { renderedText(of: $0) }.joined()
+        }
+        if let object = value as? any EObject {
+            return options.objectText.text(of: object)
         }
         return "\(value)"
     }

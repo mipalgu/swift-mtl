@@ -42,11 +42,12 @@ let generator = MTLGenerator(
 
 | Behaviour | New default | Option | 0.6 behaviour |
 |--|--|--|--|
-| Expression language: collection arguments added whole, collection kinds kept, `including` on a single value giving a set, containers found through the resources | As in this release of swift-aql | ``MTLOptions/aql`` | `AQLOptions/legacy` |
+| Expression language: collection arguments added whole, collection kinds kept, `including` on a single value giving a set, containers found through the resources, dot calls on a collection applied to each element | As in this release of swift-aql | ``MTLOptions/aql`` | `AQLOptions/legacy` |
 | Line break after a block written on one line | Dropped when the line is empty once the block has run, as in Acceleo 4 | ``MTLOptions/blockLineBreaks`` | ``MTLBlockLineBreaks/kept`` |
 | Collections passed to collection-typed parameters | Any collection whose elements conform; references resolved to objects; a single object as the only element; overloads chosen by element types; parameters hold collections | ``MTLOptions/collectionParameters`` | ``MTLCollectionParameters/exact`` |
 | Declared types of `let` variables | Checked, with mismatches handled as ``MTLOptions/letTypeMismatches`` says | ``MTLOptions/checksLetTypes`` | `false` |
 | Container lookups during a generation run | Cached, so models may change only through services that declare `modifiesModels` | ``MTLOptions/cachesContainers`` | `false` |
+| Model objects written by expression tags and collected by `[collect]` | The class name and attribute values, as in `Person (name: Alice, age: 42)`, following the text Acceleo writes without the Java class name and hash code | ``MTLOptions/objectText`` | ``MTLObjectText/swift`` |
 
 ### Changes without an option
 
@@ -64,5 +65,5 @@ declared type a type error (``MTLLetTypeMismatches/error``) or skips the block w
 (``MTLLetTypeMismatches/skip``), and ``MTLOptions/unsetFeatureReads`` reads unset features as
 their defaults or as `nil`. ``MTLOptions/aql`` accepts any combination of the swift-aql
 options, and containers are found as its `containerLookup` option says. The raw values of the
-option enumerations, such as `acceleo`, `kept`, `conforming`, `exact`, `error` and `skip`,
-double as command-line spellings.
+option enumerations, such as `acceleo`, `kept`, `conforming`, `exact`, `swift`, `error` and
+`skip`, double as command-line spellings.

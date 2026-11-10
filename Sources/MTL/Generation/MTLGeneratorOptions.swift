@@ -76,6 +76,12 @@ public struct MTLGeneratorOptions: Sendable, Equatable {
     /// strategies do not use it.
     public var templateSearchPaths: [String]
 
+    /// The charset of a `[file]` block that names none (default: `UTF-8`).
+    ///
+    /// A block that names its charset is written in that charset. Any name that
+    /// ``MTLCharset/init(name:)`` accepts may be given.
+    public var defaultCharset: String = MTLSyntax.defaultCharset
+
     /// Creates a set of generator options.
     ///
     /// - Parameters:
