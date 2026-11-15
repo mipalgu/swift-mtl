@@ -832,7 +832,7 @@ extension MTLSyntax {
     ///
     /// This never fails and does not parse. Template text, the brackets of directives, comments,
     /// keywords, identifiers, literals, operators, and punctuation each come back as tokens
-    /// of the matching kind. Text that is not valid MTL comes back as ``SourceTokenKind/invalid``
+    /// of the matching kind. Text that is not valid MTL comes back as [`SourceTokenKind.invalid`](https://mipalgu.github.io/swift-ecore/documentation/emfbase/sourcetokenkind/invalid/)
     /// tokens. Blanks inside directives belong to no token.
     ///
     /// - Parameter source: The MTL template source.

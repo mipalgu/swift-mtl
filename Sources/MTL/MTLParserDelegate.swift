@@ -83,7 +83,7 @@ extension MTLToken {
     /// The token as the AQL parser reads it.
     ///
     /// Text and directive-level tokens that AQL does not interpret become
-    /// ``AQLTokenKind/other``.
+    /// [`AQLTokenKind.other`](https://mipalgu.github.io/swift-aql/documentation/aql/aqltokenkind/other/).
     ///
     /// - Parameter table: The line table of the source text, to locate the token.
     /// - Returns: The token with its range in the source text.

@@ -295,7 +295,7 @@ public final class MTLExecutionContext: Sendable {
     ///   - serviceProviders: AQL service providers to register (default: none). Later
     ///     providers take precedence over earlier ones. See ``register(_:)``.
     ///   - unsetFeatureReads: How templates read structural features that have not been set
-    ///     (default: ``UnsetFeatureReads/defaults``, as the Eclipse Modeling Framework does).
+    ///     (default: [`UnsetFeatureReads.defaults`](https://mipalgu.github.io/swift-ecore/documentation/ecore/unsetfeaturereads/defaults/), as the Eclipse Modeling Framework does).
     ///     The mode applies to the execution engine this initialiser creates; a supplied
     ///     `aqlContext` keeps the engine it already has.
     @available(
@@ -325,7 +325,7 @@ public final class MTLExecutionContext: Sendable {
     /// Templates do not change their input models, so the expression evaluator looks up the
     /// container of each object once for `eContainer()`, `ancestors()` and the sibling services
     /// and reuses it while the work runs. Registering a model and calling a service that
-    /// declares ``AQLService/modifiesModels`` drop the cached containers. Any cached container
+    /// declares [`AQLService.modifiesModels`](https://mipalgu.github.io/swift-aql/documentation/aql/aqlservice/modifiesmodels/) drop the cached containers. Any cached container
     /// is dropped before and after the work, and the earlier caching setting is restored, so
     /// that later evaluations see changes made to the models in between.
     ///

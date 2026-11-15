@@ -10,7 +10,7 @@ import EMFBase
 
 /// The codes of the diagnostics that the MTL parser and generator report.
 ///
-/// The raw value of each case is the stable code in ``SourceDiagnostic/code``. Problems in
+/// The raw value of each case is the stable code in [`SourceDiagnostic.code`](https://mipalgu.github.io/swift-ecore/documentation/emfbase/sourcediagnostic/code/). Problems in
 /// expressions are reported with the same codes, as unexpected tokens or an unexpected end.
 /// The generator reports its warnings in ``MTLGenerationStatistics/warnings``.
 public enum MTLDiagnosticCode: String, Sendable, CaseIterable {
@@ -52,7 +52,7 @@ public enum MTLDiagnosticCode: String, Sendable, CaseIterable {
 
 /// The kinds of node in the outline of a module.
 ///
-/// The raw value of each case is the ``OutlineNode/kind`` of the node.
+/// The raw value of each case is the [`OutlineNode.kind`](https://mipalgu.github.io/swift-ecore/documentation/emfbase/outlinenode/kind/) of the node.
 public enum MTLOutlineKind: String, Sendable, CaseIterable {
     /// The module itself.
     case module
