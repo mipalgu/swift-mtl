@@ -1,45 +1,68 @@
-# swift-mtl Index
+# swift-mtl
 
-swift-mtl is a Swift library (product `MTL`) for model-to-text transformation with the OMG MOFM2T / Acceleo template language. It contains no executable; the `swift-mtl` command-line tool is part of the swift-modelling package.
+The [swift-mtl](https://github.com/mipalgu/swift-mtl) package provides a pure Swift
+library (product `MTL`) for model-to-text transformation with the
+[OMG MOFM2T](https://www.omg.org/spec/MOFM2T/) / [Acceleo](https://eclipse.dev/acceleo/)
+template language. It contains no executable: the `swift-mtl` command-line tool is part of
+[swift-modelling](https://mipalgu.github.io/swift-modelling/) and is described in
+[swift-mtl](https://mipalgu.github.io/swift-modelling/documentation/swift_mtl/index.html).
+
+## Installation
+
+Add to your `Package.swift`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/mipalgu/swift-mtl.git", branch: "main"),
+]
+```
+
+## Requirements
+
+- Swift 6.0 or later
+- macOS 15.0+ or Linux
+
+## References
+
+- [OMG MOFM2T (MOF Model-to-Text Transformation)](https://www.omg.org/spec/MOFM2T/)
+- [Acceleo](https://eclipse.dev/acceleo/)
+- [OMG OCL (Object Constraint Language)](https://www.omg.org/spec/OCL/)
+
+## Related Packages
+
+- [swift-ecore](https://mipalgu.github.io/swift-ecore/) - EMF/Ecore metamodelling, OCL, generator models and multi-level modelling ([GitHub](https://github.com/mipalgu/swift-ecore))
+- [swift-aql](https://mipalgu.github.io/swift-aql/) - AQL model queries ([GitHub](https://github.com/mipalgu/swift-aql))
+- [swift-atl](https://mipalgu.github.io/swift-atl/) - ATL model transformations ([GitHub](https://github.com/mipalgu/swift-atl))
+- [swift-henshin](https://mipalgu.github.io/swift-henshin/) - Henshin graph transformation, critical pair analysis and state-space exploration ([GitHub](https://github.com/mipalgu/swift-henshin))
+- [swift-epsilon](https://mipalgu.github.io/swift-epsilon/) - Epsilon model management languages (EOL, EVL, ETL and EGL) ([GitHub](https://github.com/mipalgu/swift-epsilon))
+- [swift-xtend](https://mipalgu.github.io/swift-xtend/) - Xtend generators and transformations ([GitHub](https://github.com/mipalgu/swift-xtend))
+- [swift-modelling](https://mipalgu.github.io/swift-modelling/) - Command-line tools, code generators and tutorials for the whole toolkit ([GitHub](https://github.com/mipalgu/swift-modelling))
 
 ## Documentation
 
-- [README.md](README.md): overview, installation, quick start
-- [SYNTAX.md](SYNTAX.md): full syntax reference
-- [Examples/README.md](Examples/README.md): the example templates
-- [Tests/MTLTests/README.md](Tests/MTLTests/README.md): the test suites and fixtures
-- `Sources/MTL/MTL.docc`: DocC articles (`GettingStarted.md`, `UnderstandingMTL.md`) and the module page (`MTL.md`)
-- [LICENCE](LICENCE)
+The package generates text from models. For details, see
+[Getting Started](documentation/mtl/gettingstarted),
+[Understanding MTL](documentation/mtl/understandingmtl) and
+[Compatibility](documentation/mtl/compatibility). The [MTL](documentation/mtl/) module page
+lists the whole API. The template syntax is described in the
+[syntax reference](https://github.com/mipalgu/swift-mtl/blob/main/SYNTAX.md), and the
+[examples](https://github.com/mipalgu/swift-mtl/tree/main/Examples) show complete templates.
 
-## Sources (Sources/MTL)
+The `swift-mtl` command-line tool of [swift-modelling](https://mipalgu.github.io/swift-modelling/)
+is described in [swift-mtl](https://mipalgu.github.io/swift-modelling/documentation/swift_mtl/index.html),
+and the MTL tutorials introduce it step by step:
 
-- `MTL.swift`: placeholder source file
-- `MTLParser.swift`: lexer and parser; `parse` links imports and parents, `parseWithoutLinking` does not
-- `MTLSyntax.swift`: keywords, reserved names, and markers
-- `MTLModule.swift`: the module model
-- `MTLModuleLoader.swift`: `MTLModuleResolver` and `MTLModuleLoader` for imports and extends
-- `MTLTemplate.swift`, `MTLQuery.swift`, `MTLMacro.swift`, `MTLVariable.swift`: declarations
-- `MTLBlock.swift`, `MTLStatement.swift`: statements and blocks
-- `MTLExpression.swift`, `MTLExpressions.swift`, `MTLInvocation.swift`, `MTLTypeMatcher.swift`: expressions, invocation, and overload matching
-- `MTLGenerator.swift`, `MTLGenerationStrategy.swift`: the generation engine and its in-memory and file system strategies
-- `MTLExecutionContext.swift`, `MTLWriter.swift`, `MTLIndentation.swift`, `MTLStandaloneLines.swift`: execution state, output, indentation, and the block-tag whitespace rule
-- `MTLProtectedAreaManager.swift`: protected area content
-- `MTLErrors.swift`: runtime errors
+- [Hello World Template](https://mipalgu.github.io/swift-modelling/tutorials/swiftmodelling/mtl-01-hello-world/index.html)
+- [Expressions and Variables](https://mipalgu.github.io/swift-modelling/tutorials/swiftmodelling/mtl-02-expressions-variables/index.html)
+- [Control Flow](https://mipalgu.github.io/swift-modelling/tutorials/swiftmodelling/mtl-03-control-flow/index.html)
+- [File Blocks](https://mipalgu.github.io/swift-modelling/tutorials/swiftmodelling/mtl-04-file-blocks/index.html)
+- [Queries and Macros](https://mipalgu.github.io/swift-modelling/tutorials/swiftmodelling/mtl-05-queries-macros/index.html)
+- [Code Generation from Models](https://mipalgu.github.io/swift-modelling/tutorials/swiftmodelling/mtl-06-code-from-models/index.html)
+- [Protected Areas](https://mipalgu.github.io/swift-modelling/tutorials/swiftmodelling/mtl-07-protected-areas/index.html)
+- [Complete Code Generator](https://mipalgu.github.io/swift-modelling/tutorials/swiftmodelling/mtl-08-complete-generator/index.html)
+- [UML to Swift Code Generation](https://mipalgu.github.io/swift-modelling/tutorials/swiftmodelling/mtl-advanced-01-uml2swift/index.html)
+- [AQL in MTL Templates](https://mipalgu.github.io/swift-modelling/tutorials/swiftmodelling/aql-04-aql-in-mtl/index.html)
+- [Reusing Modules with Model Typing](https://mipalgu.github.io/swift-modelling/tutorials/swiftmodelling/typing-01-check-compat/index.html)
+- [Multi-Level Modelling with Potency](https://mipalgu.github.io/swift-modelling/tutorials/swiftmodelling/multilevel-01-deep-modelling/index.html)
 
-## Examples
-
-`Examples/01-hello-world.mtl` to `Examples/07-protected-areas.mtl`: hello world, expressions, control flow, file blocks, queries, macros, and protected areas.
-
-## Tests (Tests/MTLTests)
-
-See [Tests/MTLTests/README.md](Tests/MTLTests/README.md). Run them with:
-
-```sh
-swift test
-```
-
-## Links
-
-- [swift-mtl on GitHub](https://github.com/mipalgu/swift-mtl)
-- [OMG MOFM2T](https://www.omg.org/spec/MOFM2T/)
-- [Acceleo](https://eclipse.dev/acceleo/)
+See all [tutorials](https://mipalgu.github.io/swift-modelling/tutorials/tutorials/index.html).

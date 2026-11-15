@@ -128,9 +128,9 @@ public final class MTLGenerator {
 
     /// How templates read structural features that have not been set.
     ///
-    /// With ``UnsetFeatureReads/defaults``, the default, an unset attribute reads as its
+    /// With [`UnsetFeatureReads.defaults`](https://mipalgu.github.io/swift-ecore/documentation/ecore/unsetfeaturereads/defaults/), the default, an unset attribute reads as its
     /// declared or data type default and an unset many-valued feature as an empty collection,
-    /// as in the Eclipse Modeling Framework. With ``UnsetFeatureReads/undefined`` an unset
+    /// as in the Eclipse Modeling Framework. With [`UnsetFeatureReads.undefined`](https://mipalgu.github.io/swift-ecore/documentation/ecore/unsetfeaturereads/undefined/) an unset
     /// feature reads as `nil`, which `[expression/]` prints as nothing. This is the
     /// ``MTLOptions/unsetFeatureReads`` of ``options``.
     public let unsetFeatureReads: UnsetFeatureReads
@@ -192,7 +192,7 @@ public final class MTLGenerator {
     ///   - globals: Global variables visible to every template, query and macro
     ///     (default: none). See ``setGlobalVariable(_:value:)`` for the precedence rules.
     ///   - unsetFeatureReads: How templates read structural features that have not been set
-    ///     (default: ``UnsetFeatureReads/defaults``). See ``unsetFeatureReads``.
+    ///     (default: [`UnsetFeatureReads.defaults`](https://mipalgu.github.io/swift-ecore/documentation/ecore/unsetfeaturereads/defaults/)). See ``unsetFeatureReads``.
     @available(
         *, deprecated,
         message: "Use init(module:generationStrategy:options:serviceProviders:globals:); pass options: .legacy to keep the behaviour of version 0.6"
@@ -327,7 +327,7 @@ public final class MTLGenerator {
     /// With ``MTLOptions/cachesContainers`` set in ``options``, the container of each model
     /// object is looked up only once while the run lasts for `eContainer()`, `ancestors()` and
     /// the sibling services, so the models must not change during the run except through
-    /// services that declare ``AQLService/modifiesModels``.
+    /// services that declare [`AQLService.modifiesModels`](https://mipalgu.github.io/swift-aql/documentation/aql/aqlservice/modifiesmodels/).
     ///
     /// The run checks for cancellation at the start of every block and every loop iteration, and
     /// gives other work on the main actor the chance to proceed after every ten milliseconds
